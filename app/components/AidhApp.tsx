@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock3,
+  Download,
   FolderClosed,
   FolderPlus,
   Grid2X2,
@@ -19,6 +22,7 @@ import {
   Star,
   Tag,
   Trash2,
+  Upload,
   X
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +34,11 @@ type ViewLayout = "grid" | "list";
 type SortMode = "default" | "visits";
 type AiState = "idle" | "loading" | "success" | "error";
 type WorkbenchMode = "bookmark" | "folder" | null;
+type ExportPayload = {
+  version: 1;
+  exportedAt: string;
+  bookmarks: Bookmark[];
+};
 type FolderOption = FolderNode & {
   depth: number;
   path: string;
@@ -95,6 +104,10 @@ export function AidhApp() {
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [form, setForm] = useState<BookmarkForm>(emptyForm);
   const [folderForm, setFolderForm] = useState({ id: "", name: "", parentId: "" });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [pendingBookmarkDelete, setPendingBookmarkDelete] = useState<Bookmark | null>(null);
+  const [pendingFolderDelete, setPendingFolderDelete] = useState<FolderNode | null>(null);
   const [aiState, setAiState] = useState<AiState>("idle");
   const [aiMessage, setAiMessage] = useState("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
   const [toast, setToast] = useState("");
@@ -267,6 +280,56 @@ export function AidhApp() {
     window.setTimeout(() => setToast(""), 2000);
   }
 
+  function exportBookmarks() {
+    const payload: ExportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      bookmarks
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `aidh-bookmarks-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(href);
+    showToast("收藏备份已导出");
+  }
+
+  async function importBookmarks(event: FormEvent) {
+    event.preventDefault();
+    try {
+      const parsed = JSON.parse(importText) as Partial<ExportPayload> | Bookmark[];
+      const items = Array.isArray(parsed) ? parsed : parsed.bookmarks;
+      if (!Array.isArray(items)) throw new Error("Invalid import payload");
+      let imported = 0;
+      for (const item of items) {
+        if (!item.url || !item.title) continue;
+        const response = await fetch("/api/bookmarks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: item.url,
+            title: item.title,
+            logoUrl: item.logoUrl,
+            description: item.description,
+            folderId: item.folderId ?? null,
+            pinned: item.pinned,
+            tags: item.tags
+          })
+        });
+        if (response.ok) imported += 1;
+      }
+      setImportText("");
+      await refresh();
+      showToast(`已导入 ${imported} 条收藏`);
+    } catch {
+      showToast("导入失败，请检查 JSON 格式");
+    }
+  }
+
   function openAdd() {
     setForm({ ...emptyForm, folderId: selectedFolderId });
     setAiState("idle");
@@ -368,6 +431,7 @@ export function AidhApp() {
 
   async function removeBookmark(bookmark: Bookmark) {
     await fetch(`/api/bookmarks/${bookmark.id}`, { method: "DELETE" });
+    setPendingBookmarkDelete(null);
     await refresh();
     showToast("收藏已删除");
   }
@@ -403,6 +467,7 @@ export function AidhApp() {
     const response = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
     if (!response.ok) {
       const json = await response.json();
+      setPendingFolderDelete(null);
       showToast(json.message);
       return;
     }
@@ -410,6 +475,7 @@ export function AidhApp() {
       setViewMode("all");
       setSelectedFolderId(null);
     }
+    setPendingFolderDelete(null);
     await refresh();
     showToast("文件夹已删除");
   }
@@ -426,10 +492,10 @@ export function AidhApp() {
             <span>收藏导航</span>
           </div>
           <div className="window-actions">
-            <button className="icon-button" aria-label="视图">
-              <Grid2X2 size={18} />
+            <button className="icon-button" aria-label="切换视图" onClick={() => setViewLayout((current) => (current === "grid" ? "list" : "grid"))}>
+              {viewLayout === "grid" ? <List size={18} /> : <Grid2X2 size={18} />}
             </button>
-            <button className="icon-button" aria-label="设置">
+            <button className="icon-button" aria-label="设置" onClick={() => setSettingsOpen(true)}>
               <Settings size={18} />
             </button>
           </div>
@@ -489,7 +555,7 @@ export function AidhApp() {
                   }}
                   onEdit={openFolderSheet}
                   onAddChild={(folder) => openFolderSheet(undefined, folder.id)}
-                  onDelete={removeFolder}
+                  onDelete={setPendingFolderDelete}
                 />
               ))}
             </nav>
@@ -666,7 +732,7 @@ export function AidhApp() {
                       bookmark={bookmark}
                       layout={viewLayout}
                       onEdit={openEdit}
-                      onDelete={removeBookmark}
+                      onDelete={setPendingBookmarkDelete}
                       onTogglePinned={togglePinned}
                       onVisit={recordVisit}
                     />
@@ -756,6 +822,81 @@ export function AidhApp() {
                 <div className="spotlight-empty">没有找到相关收藏。</div>
               )}
             </div>
+          </section>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}>
+          <section className="modal-panel settings-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="设置">
+            <WorkbenchHeader eyebrow="Library Control" title="设置" onClose={() => setSettingsOpen(false)} />
+            <div className="settings-grid">
+              <section className="settings-block">
+                <CheckCircle2 size={20} />
+                <div>
+                  <strong>{bookmarks.length} 个收藏</strong>
+                  <span>{flatFolders.length} 个文件夹，{bookmarks.filter((bookmark) => bookmark.pinned).length} 个常用网址</span>
+                </div>
+              </section>
+              <button className="settings-action" onClick={exportBookmarks}>
+                <Download size={18} />
+                <span>导出收藏 JSON</span>
+              </button>
+            </div>
+            <form className="import-box" onSubmit={importBookmarks}>
+              <label className="field wide">
+                <span>导入收藏 JSON</span>
+                <textarea
+                  value={importText}
+                  onChange={(event) => setImportText(event.target.value)}
+                  rows={6}
+                  placeholder="粘贴 AIDH 导出的 JSON，重复网址会自动合并。"
+                />
+              </label>
+              <button className="primary-button" type="submit" disabled={!importText.trim()}>
+                <Upload size={17} />
+                导入
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {(pendingBookmarkDelete || pendingFolderDelete) && (
+        <div className="modal-backdrop" onMouseDown={() => {
+          setPendingBookmarkDelete(null);
+          setPendingFolderDelete(null);
+        }}>
+          <section className="modal-panel confirm-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="确认删除">
+            <div className="confirm-icon">
+              <AlertTriangle size={22} />
+            </div>
+            <h2>确认删除</h2>
+            <p>
+              {pendingBookmarkDelete
+                ? `删除收藏「${pendingBookmarkDelete.title}」？`
+                : `删除文件夹「${pendingFolderDelete?.name}」？文件夹内有内容时会自动阻止。`}
+            </p>
+            <footer className="confirm-actions">
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setPendingBookmarkDelete(null);
+                  setPendingFolderDelete(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="danger-button"
+                onClick={() => {
+                  if (pendingBookmarkDelete) void removeBookmark(pendingBookmarkDelete);
+                  if (pendingFolderDelete) void removeFolder(pendingFolderDelete);
+                }}
+              >
+                删除
+              </button>
+            </footer>
           </section>
         </div>
       )}
