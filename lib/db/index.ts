@@ -29,9 +29,52 @@ function favicon(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 }
 
+const equivalentHostRoots = ["magicui.design"];
+
+const folderRenames = [
+  ["fld_ai_coding", "编程"],
+  ["fld_model_api", "模型 API"],
+  ["fld_model_eval", "评测榜单"],
+  ["fld_data_cloud", "数据云"],
+  ["fld_ui_design", "UI 组件"],
+  ["fld_deploy_growth", "部署增长"],
+  ["fld_domain", "域名出海"],
+  ["fld_analytics", "反馈分析"],
+  ["fld_open_source", "开源源码"],
+  ["fld_product_cases", "产品案例"],
+  ["fld_learning", "课程阅读"],
+  ["fld_agent", "编程"],
+  ["fld_gen", "生图视频"],
+  ["fld_write", "写作"],
+  ["fld_design", "设计"],
+  ["fld_docs", "文档"]
+] as const;
+
+const folderHierarchy = [
+  ["fld_open_source", null, 1],
+  ["fld_ai_coding", "fld_open_source", 1],
+  ["fld_ui_design", "fld_open_source", 2],
+  ["fld_model_api", null, 2],
+  ["fld_model_eval", "fld_model_api", 1],
+  ["fld_product_cases", "fld_model_api", 2],
+  ["fld_data_cloud", null, 3],
+  ["fld_deploy_growth", "fld_data_cloud", 1],
+  ["fld_domain", "fld_deploy_growth", 1],
+  ["fld_analytics", null, 4],
+  ["fld_learning", "fld_analytics", 1]
+] as const;
+
 export function canonicalBookmarkUrl(value: string) {
   const parsed = new URL(value);
   return parsed.origin;
+}
+
+function bookmarkIdentityUrl(value: string) {
+  const parsed = new URL(canonicalBookmarkUrl(value));
+  const host = parsed.hostname.replace(/^www\./, "");
+  const root = equivalentHostRoots.find((candidate) => host === candidate || host.endsWith(`.${candidate}`));
+  if (root) return `${parsed.protocol}//${root}`;
+  return `${parsed.protocol}//${host}`;
 }
 
 export function ensureDb() {
@@ -75,7 +118,37 @@ export function ensureDb() {
 
   const existing = sqlite.prepare("SELECT COUNT(*) AS count FROM folders").get() as { count: number };
   if (existing.count === 0) seed();
+  migrateFolderNames();
+  migrateFolderHierarchy();
+  mergeEquivalentBookmarks();
   initialized = true;
+}
+
+function migrateFolderNames() {
+  const t = now();
+  const stmt = sqlite.prepare("UPDATE folders SET name = ?, updated_at = ? WHERE id = ? AND name <> ?");
+  folderRenames.forEach(([folderId, name]) => stmt.run(name, t, folderId, name));
+}
+
+function migrateFolderHierarchy() {
+  const t = now();
+  const stmt = sqlite.prepare("UPDATE folders SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?");
+  folderHierarchy.forEach(([folderId, parentId, sortOrder]) => stmt.run(parentId, sortOrder, t, folderId));
+}
+
+function mergeEquivalentBookmarks() {
+  const rows = db.select().from(bookmarks).orderBy(desc(bookmarks.pinned), asc(bookmarks.createdAt)).all();
+  const seen = new Map<string, string>();
+  rows.forEach((bookmark) => {
+    const identity = bookmarkIdentityUrl(bookmark.url);
+    const existingId = seen.get(identity);
+    if (!existingId) {
+      seen.set(identity, bookmark.id);
+      return;
+    }
+    db.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmark.id)).run();
+    db.delete(bookmarks).where(eq(bookmarks.id, bookmark.id)).run();
+  });
 }
 
 function seed() {
@@ -360,7 +433,12 @@ export function createBookmark(input: {
   ensureDb();
   const t = now();
   const url = canonicalBookmarkUrl(input.url);
-  const existing = db.select().from(bookmarks).where(eq(bookmarks.url, url)).get();
+  const identityUrl = bookmarkIdentityUrl(url);
+  const existing = db
+    .select()
+    .from(bookmarks)
+    .where(or(eq(bookmarks.url, url), eq(bookmarks.url, identityUrl)))
+    .get();
   if (existing) {
     return updateBookmark(existing.id, {
       title: input.title,
@@ -373,7 +451,7 @@ export function createBookmark(input: {
   }
   const row = {
     id: id("bm"),
-    url,
+    url: identityUrl,
     title: input.title.trim() || url,
     logoUrl: input.logoUrl || favicon(new URL(url).hostname),
     description: input.description.trim(),
@@ -402,7 +480,7 @@ export function updateBookmark(bookmarkId: string, input: Partial<{
   const current = getBookmark(bookmarkId);
   if (!current) return null;
   const pinnedBecameTrue = input.pinned === true && !current.pinned;
-  const url = input.url ? canonicalBookmarkUrl(input.url) : current.url;
+  const url = input.url ? bookmarkIdentityUrl(input.url) : current.url;
   db.update(bookmarks)
     .set({
       url,

@@ -278,6 +278,14 @@ kbd {
   padding-right: 3px;
 }
 
+.folder-tree-item {
+  --folder-depth: 0;
+}
+
+.folder-scroll > .folder-tree-item {
+  margin-top: 2px;
+}
+
 .section-row {
   justify-content: space-between;
 }
@@ -334,10 +342,39 @@ kbd {
 }
 
 .folder-row {
+  position: relative;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 25px 25px;
+  grid-template-columns: 18px minmax(0, 1fr) 25px 25px 25px;
   align-items: center;
   gap: 4px;
+  padding-left: calc(4px + var(--folder-depth) * 19px);
+}
+
+.folder-row::before {
+  position: absolute;
+  left: calc(13px + var(--folder-depth) * 19px);
+  width: 11px;
+  height: 1px;
+  background: rgba(106, 122, 139, 0.28);
+  content: "";
+}
+
+.folder-tree-item[style*="--folder-depth: 0"] > .folder-row::before {
+  display: none;
+}
+
+.folder-children {
+  position: relative;
+}
+
+.folder-children::before {
+  position: absolute;
+  top: -4px;
+  bottom: 7px;
+  left: calc(13px + var(--folder-depth, 0) * 19px);
+  width: 1px;
+  background: rgba(106, 122, 139, 0.22);
+  content: "";
 }
 
 .disclosure,

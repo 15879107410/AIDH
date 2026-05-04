@@ -30,6 +30,10 @@ type ViewLayout = "grid" | "list";
 type SortMode = "default" | "visits";
 type AiState = "idle" | "loading" | "success" | "error";
 type WorkbenchMode = "bookmark" | "folder" | null;
+type FolderOption = FolderNode & {
+  depth: number;
+  path: string;
+};
 
 type BookmarkForm = {
   id?: string;
@@ -67,6 +71,17 @@ function flattenFolders(nodes: FolderNode[]): FolderNode[] {
   return nodes.flatMap((node) => [node, ...flattenFolders(node.children)]);
 }
 
+function flattenFolderOptions(nodes: FolderNode[], depth = 0, parentPath = ""): FolderOption[] {
+  return nodes.flatMap((node) => {
+    const path = parentPath ? `${parentPath} / ${node.name}` : node.name;
+    return [{ ...node, depth, path }, ...flattenFolderOptions(node.children, depth + 1, path)];
+  });
+}
+
+function collectFolderIds(folder: FolderNode): string[] {
+  return [folder.id, ...folder.children.flatMap(collectFolderIds)];
+}
+
 export function AidhApp() {
   const [folders, setFolders] = useState<FolderNode[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -89,7 +104,17 @@ export function AidhApp() {
   const dockMouseX = useRef<number | null>(null);
 
   const flatFolders = useMemo(() => flattenFolders(folders), [folders]);
+  const folderOptions = useMemo(() => flattenFolderOptions(folders), [folders]);
   const selectedFolder = flatFolders.find((folder) => folder.id === selectedFolderId);
+  const editingFolder = flatFolders.find((folder) => folder.id === folderForm.id);
+  const blockedParentIds = useMemo(() => {
+    if (!editingFolder) return new Set<string>();
+    return new Set(collectFolderIds(editingFolder));
+  }, [editingFolder]);
+  const selectedFolderIds = useMemo(() => {
+    if (!selectedFolder) return new Set<string>();
+    return new Set(collectFolderIds(selectedFolder));
+  }, [selectedFolder]);
   const pinnedBookmarks = bookmarks.filter((bookmark) => bookmark.pinned).slice(0, 8);
   const recentBookmarks = [...bookmarks]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -102,7 +127,7 @@ export function AidhApp() {
         : viewMode === "recent"
           ? recentBookmarks
           : viewMode === "folder" && selectedFolderId
-            ? bookmarks.filter((bookmark) => bookmark.folderId === selectedFolderId)
+            ? bookmarks.filter((bookmark) => bookmark.folderId && selectedFolderIds.has(bookmark.folderId))
             : bookmarks;
     const needle = query.trim().toLowerCase();
     const filtered = needle
@@ -117,7 +142,7 @@ export function AidhApp() {
       return [...filtered].sort((a, b) => b.visitCount - a.visitCount || b.updatedAt.localeCompare(a.updatedAt));
     }
     return filtered;
-  }, [bookmarks, query, recentBookmarks, selectedFolderId, sortMode, viewMode]);
+  }, [bookmarks, query, recentBookmarks, selectedFolderId, selectedFolderIds, sortMode, viewMode]);
 
   const folderFilterLabel = selectedFolder ? selectedFolder.name : "全部文件夹";
 
@@ -347,11 +372,11 @@ export function AidhApp() {
     showToast("收藏已删除");
   }
 
-  function openFolderSheet(folder?: FolderNode) {
+  function openFolderSheet(folder?: FolderNode, parentId?: string | null) {
     setFolderForm({
       id: folder?.id ?? "",
       name: folder?.name ?? "",
-      parentId: folder?.parentId ?? selectedFolderId ?? ""
+      parentId: folder?.parentId ?? parentId ?? selectedFolderId ?? ""
     });
     setWorkbenchMode("folder");
   }
@@ -463,6 +488,7 @@ export function AidhApp() {
                     setSelectedFolderId(id);
                   }}
                   onEdit={openFolderSheet}
+                  onAddChild={(folder) => openFolderSheet(undefined, folder.id)}
                   onDelete={removeFolder}
                 />
               ))}
@@ -505,10 +531,11 @@ export function AidhApp() {
                         <span>全部文件夹</span>
                         <strong>{bookmarks.length}</strong>
                       </button>
-                      {flatFolders.map((folder) => (
+                      {folderOptions.map((folder) => (
                         <button
                           key={folder.id}
                           className={selectedFolderId === folder.id ? "active" : ""}
+                          style={{ paddingLeft: 11 + folder.depth * 18 }}
                           onClick={() => selectFolderFilter(folder.id)}
                         >
                           <span>{folder.name}</span>
@@ -557,8 +584,9 @@ export function AidhApp() {
                       <span>文件夹</span>
                       <select value={form.folderId ?? ""} onChange={(event) => setForm({ ...form, folderId: event.target.value || null })}>
                         <option value="">未分类</option>
-                        {flatFolders.map((folder) => (
+                        {folderOptions.map((folder) => (
                           <option key={folder.id} value={folder.id}>
+                            {"-- ".repeat(folder.depth)}
                             {folder.name}
                           </option>
                         ))}
@@ -607,10 +635,11 @@ export function AidhApp() {
                       <span>父级文件夹</span>
                       <select value={folderForm.parentId} onChange={(event) => setFolderForm({ ...folderForm, parentId: event.target.value })}>
                         <option value="">顶层</option>
-                        {flatFolders
-                          .filter((folder) => folder.id !== folderForm.id)
+                        {folderOptions
+                          .filter((folder) => !blockedParentIds.has(folder.id))
                           .map((folder) => (
                             <option key={folder.id} value={folder.id}>
+                              {"-- ".repeat(folder.depth)}
                               {folder.name}
                             </option>
                           ))}
@@ -764,6 +793,7 @@ function FolderItem({
   level = 0,
   onSelect,
   onEdit,
+  onAddChild,
   onDelete
 }: {
   folder: FolderNode;
@@ -771,13 +801,14 @@ function FolderItem({
   level?: number;
   onSelect: (id: string) => void;
   onEdit: (folder: FolderNode) => void;
+  onAddChild: (folder: FolderNode) => void;
   onDelete: (folder: FolderNode) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div>
-      <div className={`folder-row ${activeId === folder.id ? "active" : ""}`} style={{ paddingLeft: 10 + level * 18 }}>
-        <button className="disclosure" onClick={() => setOpen(!open)} aria-label="展开文件夹">
+    <div className="folder-tree-item" style={{ "--folder-depth": level } as React.CSSProperties}>
+      <div className={`folder-row ${activeId === folder.id ? "active" : ""}`}>
+        <button className="disclosure" onClick={() => setOpen(!open)} aria-label={open ? "收起文件夹" : "展开文件夹"}>
           {folder.children.length ? open ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span />}
         </button>
         <button className="folder-main" onClick={() => onSelect(folder.id)}>
@@ -788,14 +819,29 @@ function FolderItem({
         <button className="row-action" onClick={() => onEdit(folder)} aria-label="编辑文件夹">
           <Pencil size={13} />
         </button>
+        <button className="row-action" onClick={() => onAddChild(folder)} aria-label="新建子文件夹">
+          <FolderPlus size={13} />
+        </button>
         <button className="row-action" onClick={() => onDelete(folder)} aria-label="删除文件夹">
           <Trash2 size={13} />
         </button>
       </div>
-      {open &&
-        folder.children.map((child) => (
-          <FolderItem key={child.id} folder={child} activeId={activeId} level={level + 1} onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} />
-        ))}
+      {open && Boolean(folder.children.length) && (
+        <div className="folder-children">
+          {folder.children.map((child) => (
+            <FolderItem
+              key={child.id}
+              folder={child}
+              activeId={activeId}
+              level={level + 1}
+              onSelect={onSelect}
+              onEdit={onEdit}
+              onAddChild={onAddChild}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

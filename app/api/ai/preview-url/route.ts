@@ -14,7 +14,7 @@ const known = [
     title: "即梦 AI",
     description: "字节旗下 AI 创作工具，支持文生图、图生图和视频生成，适合 AIGC 内容制作。",
     tags: ["生图", "生视频", "AIGC", "字节"],
-    folder: "生图生视频",
+    folder: "生图视频",
     confidence: 0.94
   },
   {
@@ -22,7 +22,7 @@ const known = [
     title: "Midjourney",
     description: "高质量图片生成工具，适合视觉探索、海报、概念图和品牌灵感发散。",
     tags: ["生图", "设计", "灵感"],
-    folder: "生图生视频",
+    folder: "生图视频",
     confidence: 0.91
   },
   {
@@ -30,7 +30,7 @@ const known = [
     title: "Krea",
     description: "实时生成与图片增强工具，适合快速探索视觉方向和优化素材。",
     tags: ["生图", "实时生成", "设计"],
-    folder: "生图生视频",
+    folder: "生图视频",
     confidence: 0.88
   },
   {
@@ -38,7 +38,7 @@ const known = [
     title: "OpenAI",
     description: "AI 模型、API 与研究平台，适合跟踪模型能力、开发文档和产品更新。",
     tags: ["模型", "API", "Agent"],
-    folder: "Agent / 编程",
+    folder: "编程",
     confidence: 0.9
   }
 ];
