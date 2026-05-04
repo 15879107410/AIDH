@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ArrowUpRight, Folder, Grid2X2, Search, Sparkles, Star } from "lucide-react";
+import { Activity, Folder, Grid2X2, Search, Star } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import type { Bookmark } from "@/lib/types";
@@ -17,7 +17,6 @@ export function SpotlightSearch({ value, onChange, results, onFocusSearch }: Spo
   const [hovered, setHovered] = useState(false);
   const [activeShortcut, setActiveShortcut] = useState<string | null>(null);
   const showResults = value.trim().length > 0;
-  const previewResults = results.slice(0, 5);
   const shortcuts = [
     { label: "全部", icon: <Grid2X2 size={28} /> },
     { label: "文件夹", icon: <Folder size={28} /> },
@@ -48,7 +47,7 @@ export function SpotlightSearch({ value, onChange, results, onFocusSearch }: Spo
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 onFocus={onFocusSearch}
-                placeholder={activeShortcut ?? (hovered ? "选择右侧快捷搜索" : "今天想找什么？试试“生图”“PPT”“代码 Agent”")}
+                placeholder={showResults ? "" : activeShortcut ?? (hovered ? "选择右侧快捷搜索" : "今天想找什么？试试“生图”“PPT”“代码 Agent”")}
                 aria-label="搜索收藏"
               />
             </div>
@@ -56,34 +55,6 @@ export function SpotlightSearch({ value, onChange, results, onFocusSearch }: Spo
           </div>
 
           <AnimatePresence>
-            {showResults && (
-              <motion.div
-                className="apple-spotlight-results"
-                initial={{ opacity: 0, height: 0, filter: "blur(8px)" }}
-                animate={{ opacity: 1, height: "auto", filter: "blur(0px)" }}
-                exit={{ opacity: 0, height: 0, filter: "blur(8px)" }}
-                transition={{ type: "spring", stiffness: 420, damping: 38 }}
-              >
-                {previewResults.length ? (
-                  previewResults.map((bookmark) => (
-                    <a key={bookmark.id} className="apple-spotlight-result" href={bookmark.url} target="_blank" rel="noreferrer">
-                      <img src={bookmark.logoUrl} alt="" />
-                      <span>
-                        <strong>{bookmark.title}</strong>
-                        <small>{bookmark.tags.join("、") || bookmark.description}</small>
-                      </span>
-                      <em>{bookmark.folderName ?? "未分类"}</em>
-                      <ArrowUpRight size={17} />
-                    </a>
-                  ))
-                ) : (
-                  <div className="apple-spotlight-empty">
-                    <Sparkles size={18} />
-                    没有找到相关收藏
-                  </div>
-                )}
-              </motion.div>
-            )}
           </AnimatePresence>
         </motion.div>
 
