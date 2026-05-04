@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIDH Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="desktop">
+      <div class="wallpaper-noise"></div>
+
+      <main class="mac-window" aria-label="AIDH AI 收藏导航原型">
+        <header class="window-bar">
+          <div class="traffic-lights" aria-hidden="true">
+            <span class="light red"></span>
+            <span class="light yellow"></span>
+            <span class="light green"></span>
+          </div>
+          <div class="window-title">
+            <span class="app-mark">A</span>
+            <strong>AIDH</strong>
+            <span>AI 收藏导航</span>
+          </div>
+          <div class="window-actions">
+            <button class="icon-button" type="button" aria-label="视图切换">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v5H4zM13 14h7v5h-7z"/></svg>
+            </button>
+            <button class="icon-button" type="button" aria-label="设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Zm8.4 3.8c0-.5-.1-1-.2-1.5l2-1.5-2-3.4-2.4 1a8.3 8.3 0 0 0-2.6-1.5L14.8 2h-5.6l-.4 3.1a8.3 8.3 0 0 0-2.6 1.5l-2.4-1-2 3.4 2 1.5a8.2 8.2 0 0 0 0 3l-2 1.5 2 3.4 2.4-1a8.3 8.3 0 0 0 2.6 1.5l.4 3.1h5.6l.4-3.1a8.3 8.3 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.5c.1-.5.2-1 .2-1.5Z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <aside class="sidebar">
+            <button class="sidebar-search" type="button" id="openSearch">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-4.7-4.7m2.2-5.8a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+              <span>搜索收藏、标签或任务</span>
+              <kbd>⌘K</kbd>
+            </button>
+
+            <section class="nav-section">
+              <p class="section-label">个人</p>
+              <button class="nav-item active" type="button">
+                <span class="nav-icon">⌂</span>
+                <span>全部收藏</span>
+                <strong>128</strong>
+              </button>
+              <button class="nav-item" type="button">
+                <span class="nav-icon">★</span>
+                <span>常用网址</span>
+                <strong>12</strong>
+              </button>
+              <button class="nav-item" type="button">
+                <span class="nav-icon">◷</span>
+                <span>最近添加</span>
+                <strong>9</strong>
+              </button>
+            </section>
+
+            <section class="nav-section">
+              <p class="section-label">文件夹</p>
+              <button class="nav-item folder-item selected-drop" type="button">
+                <span class="chevron">▾</span>
+                <span>AI 工具</span>
+                <strong>46</strong>
+              </button>
+              <button class="nav-item child" type="button">
+                <span class="chevron">›</span>
+                <span>生图生视频</span>
+                <strong>18</strong>
+              </button>
+              <button class="nav-item child" type="button">
+                <span class="chevron">›</span>
+                <span>AI 写作</span>
+                <strong>11</strong>
+              </button>
+              <button class="nav-item child" type="button">
+                <span class="chevron">›</span>
+                <span>Agent / 编程</span>
+                <strong>17</strong>
+              </button>
+              <button class="nav-item folder-item" type="button">
+                <span class="chevron">▸</span>
+                <span>设计灵感</span>
+                <strong>24</strong>
+              </button>
+              <button class="nav-item folder-item" type="button">
+                <span class="chevron">▸</span>
+                <span>开发文档</span>
+                <strong>31</strong>
+              </button>
+            </section>
+
+            <section class="nav-section">
+              <p class="section-label">智能标签</p>
+              <div class="tag-cloud">
+                <span>生图</span>
+                <span>生视频</span>
+                <span>AIGC</span>
+                <span>写作</span>
+                <span>设计</span>
+                <span>文档</span>
+              </div>
+            </section>
+          </aside>
+
+          <section class="content">
+            <div class="toolbar">
+              <div>
+                <p class="eyebrow">Smart Bookmarks</p>
+                <h1>全部收藏</h1>
+              </div>
+              <div class="toolbar-actions">
+                <button class="soft-button" type="button" id="showDropState">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m7-7H5"/></svg>
+                  新建文件夹
+                </button>
+                <button class="primary-button" type="button" id="openAdd">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m7-7H5"/></svg>
+                  添加网址
+                </button>
+              </div>
+            </div>
+
+            <section class="hero-search">
+              <button class="spotlight" type="button" id="openSearchHero">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-4.7-4.7m2.2-5.8a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+                <span>今天想找什么？试试“生图”“PPT”“代码 Agent”</span>
+              </button>
+              <div class="ai-status">
+                <span class="pulse"></span>
+                AI 已为 32 个网址补全标签
+              </div>
+            </section>
+
+            <section class="panel-strip">
+              <article class="glass-panel ai-panel">
+                <div>
+                  <p class="eyebrow">AI Suggestion</p>
+                  <h2>输入即梦官网后，AI 会建议放入「生图生视频」</h2>
+                  <p>自动识别标题、摘要和标签，也允许你改成其他文件夹或新建分类。</p>
+                </div>
+                <button class="mini-button" type="button" id="openAddFromPanel">体验添加</button>
+              </article>
+              <article class="glass-panel stat-panel">
+                <strong>18</strong>
+                <span>生图生视频工具</span>
+              </article>
+              <article class="glass-panel stat-panel">
+                <strong>6</strong>
+                <span>待整理收藏</span>
+              </article>
+            </section>
+
+            <section class="inline-lab" id="inlineLab">
+              <article class="inline-card add-workbench" id="addWorkbench">
+                <div class="inline-head">
+                  <div>
+                    <p class="eyebrow">AI Import</p>
+                    <h2>添加网址</h2>
+                  </div>
+                  <div class="ai-reading">
+                    <span class="pulse"></span>
+                    AI 已识别网页信息
+                  </div>
+                </div>
+                <label class="url-field">
+                  <span>网址</span>
+                  <input type="url" value="https://jimeng.jianying.com/" />
+                </label>
+                <div class="ai-form-grid">
+                  <label>
+                    标题
+                    <input type="text" value="即梦 AI" />
+                  </label>
+                  <label>
+                    推荐文件夹
+                    <select>
+                      <option>生图生视频</option>
+                      <option>AI 工具</option>
+                      <option>新建文件夹...</option>
+                    </select>
+                  </label>
+                  <label class="wide">
+                    简介
+                    <textarea rows="3">字节旗下 AI 创作工具，支持文生图、图生图和视频生成，适合 AIGC 内容制作。</textarea>
+                  </label>
+                </div>
+                <div class="suggest-box">
+                  <div>
+                    <strong>建议放入「生图生视频」</strong>
+                    <p>因为它和当前文件夹里的 Midjourney、Krea、Runway 标签高度相似。</p>
+                  </div>
+                  <button class="mini-button" type="button">接受建议</button>
+                </div>
+                <footer class="inline-footer">
+                  <div class="tags editable">
+                    <span>生图</span>
+                    <span>生视频</span>
+                    <span>AIGC</span>
+                    <span>字节</span>
+                    <button type="button">+ 标签</button>
+                  </div>
+                  <button class="primary-button" type="button" id="saveMock">保存收藏</button>
+                </footer>
+              </article>
+
+              <article class="inline-card search-workbench" id="searchWorkbench">
+                <div class="command-input inline-command">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-4.7-4.7m2.2-5.8a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+                  <input id="commandInput" type="text" value="生图" aria-label="搜索内容" />
+                  <kbd>AI Search</kbd>
+                </div>
+                <div class="command-results">
+                  <p class="result-label">智能匹配</p>
+                  <button class="result-row active" type="button">
+                    <img src="https://www.google.com/s2/favicons?domain=jimeng.jianying.com&sz=128" alt="" />
+                    <span><strong>即梦 AI</strong><small>生图、生视频、AIGC</small></span>
+                    <em>生图生视频</em>
+                  </button>
+                  <button class="result-row" type="button">
+                    <img src="https://www.google.com/s2/favicons?domain=midjourney.com&sz=128" alt="" />
+                    <span><strong>Midjourney</strong><small>高质量图片生成</small></span>
+                    <em>生图生视频</em>
+                  </button>
+                  <button class="result-row" type="button">
+                    <img src="https://www.google.com/s2/favicons?domain=krea.ai&sz=128" alt="" />
+                    <span><strong>Krea</strong><small>实时生成与增强</small></span>
+                    <em>生图</em>
+                  </button>
+                  <p class="result-label">AI 推荐</p>
+                  <button class="ai-result" type="button">
+                    <span class="spark">✦</span>
+                    <span>你可能想找“生图 + 生视频”的组合工具，建议打开即梦 AI 或 Runway。</span>
+                  </button>
+                </div>
+              </article>
+            </section>
+
+            <section class="content-section">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Pinned</p>
+                  <h2>常用网址</h2>
+                </div>
+                <button class="text-button" type="button">管理 Dock</button>
+              </div>
+              <div class="quick-grid">
+                <a class="quick-card" href="#" draggable="true">
+                  <img src="https://www.google.com/s2/favicons?domain=openai.com&sz=128" alt="" />
+                  <div>
+                    <strong>OpenAI</strong>
+                    <span>模型、API、研究</span>
+                  </div>
+                </a>
+                <a class="quick-card dragging-card" href="#" draggable="true">
+                  <img src="https://www.google.com/s2/favicons?domain=jimeng.jianying.com&sz=128" alt="" />
+                  <div>
+                    <strong>即梦 AI</strong>
+                    <span>生图 / 生视频 / AIGC</span>
+                  </div>
+                </a>
+                <a class="quick-card" href="#" draggable="true">
+                  <img src="https://www.google.com/s2/favicons?domain=notion.so&sz=128" alt="" />
+                  <div>
+                    <strong>Notion</strong>
+                    <span>知识库与协作</span>
+                  </div>
+                </a>
+                <a class="quick-card" href="#" draggable="true">
+                  <img src="https://www.google.com/s2/favicons?domain=figma.com&sz=128" alt="" />
+                  <div>
+                    <strong>Figma</strong>
+                    <span>设计与原型</span>
+                  </div>
+                </a>
+              </div>
+            </section>
+
+            <section class="content-section">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Folder</p>
+                  <h2>生图生视频</h2>
+                </div>
+                <div class="segmented">
+                  <button class="active" type="button">卡片</button>
+                  <button type="button">列表</button>
+                </div>
+              </div>
+
+              <div class="bookmark-grid">
+                <article class="bookmark-card">
+                  <div class="card-top">
+                    <img src="https://www.google.com/s2/favicons?domain=jimeng.jianying.com&sz=128" alt="" />
+                    <button class="star active" type="button" aria-label="已加入常用">★</button>
+                  </div>
+                  <h3>即梦 AI</h3>
+                  <p>字节旗下 AI 创作工具，支持文生图、图生图和视频生成。</p>
+                  <div class="tags">
+                    <span>生图</span>
+                    <span>生视频</span>
+                    <span>AIGC</span>
+                  </div>
+                </article>
+
+                <article class="bookmark-card">
+                  <div class="card-top">
+                    <img src="https://www.google.com/s2/favicons?domain=midjourney.com&sz=128" alt="" />
+                    <button class="star" type="button" aria-label="加入常用">☆</button>
+                  </div>
+                  <h3>Midjourney</h3>
+                  <p>高质量图像生成工具，适合视觉探索、海报和概念图。</p>
+                  <div class="tags">
+                    <span>生图</span>
+                    <span>设计</span>
+                    <span>灵感</span>
+                  </div>
+                </article>
+
+                <article class="bookmark-card drop-target">
+                  <div class="card-top">
+                    <img src="https://www.google.com/s2/favicons?domain=krea.ai&sz=128" alt="" />
+                    <button class="star" type="button" aria-label="加入常用">☆</button>
+                  </div>
+                  <h3>Krea</h3>
+                  <p>实时生成和图片增强，适合快速预览创意方向。</p>
+                  <div class="tags">
+                    <span>生图</span>
+                    <span>实时生成</span>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </section>
+        </div>
+      </main>
+
+      <nav class="dock" aria-label="常用网址 Dock">
+        <a href="#" class="dock-item" style="--label: 'Safari'">
+          <img src="https://www.google.com/s2/favicons?domain=apple.com&sz=128" alt="" />
+        </a>
+        <a href="#" class="dock-item" style="--label: 'OpenAI'">
+          <img src="https://www.google.com/s2/favicons?domain=openai.com&sz=128" alt="" />
+        </a>
+        <a href="#" class="dock-item active" style="--label: '即梦 AI'">
+          <img src="https://www.google.com/s2/favicons?domain=jimeng.jianying.com&sz=128" alt="" />
+        </a>
+        <a href="#" class="dock-item" style="--label: 'Notion'">
+          <img src="https://www.google.com/s2/favicons?domain=notion.so&sz=128" alt="" />
+        </a>
+        <a href="#" class="dock-item" style="--label: 'Figma'">
+          <img src="https://www.google.com/s2/favicons?domain=figma.com&sz=128" alt="" />
+        </a>
+        <a href="#" class="dock-item" style="--label: 'Runway'">
+          <img src="https://www.google.com/s2/favicons?domain=runwayml.com&sz=128" alt="" />
+        </a>
+        <span class="dock-divider"></span>
+        <button class="dock-item add-dock" type="button" id="openAddDock" aria-label="添加网址">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m7-7H5"/></svg>
+        </button>
+      </nav>
+    </div>
+
+    <script src="prototype.js"></script>
+  </body>
+</html>
