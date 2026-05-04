@@ -18,6 +18,7 @@ export const bookmarks = sqliteTable("bookmarks", {
   folderId: text("folder_id"),
   pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
   pinnedOrder: integer("pinned_order"),
+  visitCount: integer("visit_count").notNull().default(0),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull()
 });

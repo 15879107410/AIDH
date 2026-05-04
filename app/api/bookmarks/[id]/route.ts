@@ -1,12 +1,26 @@
 import { NextResponse } from "next/server";
-import { deleteBookmark, updateBookmark } from "@/lib/db";
+import { canonicalBookmarkUrl, deleteBookmark, recordBookmarkVisit, updateBookmark } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json();
+  if (body.url) {
+    try {
+      body.url = canonicalBookmarkUrl(body.url);
+    } catch {
+      return NextResponse.json({ message: "请输入有效 URL。" }, { status: 400 });
+    }
+  }
   const bookmark = updateBookmark(id, body);
+  if (!bookmark) return NextResponse.json({ message: "收藏不存在。" }, { status: 404 });
+  return NextResponse.json({ bookmark });
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const bookmark = recordBookmarkVisit(id);
   if (!bookmark) return NextResponse.json({ message: "收藏不存在。" }, { status: 404 });
   return NextResponse.json({ bookmark });
 }

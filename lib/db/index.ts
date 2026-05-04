@@ -29,6 +29,11 @@ function favicon(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 }
 
+export function canonicalBookmarkUrl(value: string) {
+  const parsed = new URL(value);
+  return parsed.origin;
+}
+
 export function ensureDb() {
   if (initialized) return;
   sqlite.exec(`
@@ -49,6 +54,7 @@ export function ensureDb() {
       folder_id TEXT,
       pinned INTEGER NOT NULL DEFAULT 0,
       pinned_order INTEGER,
+      visit_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -62,6 +68,10 @@ export function ensureDb() {
       PRIMARY KEY (bookmark_id, tag_id)
     );
   `);
+  const columns = sqlite.prepare("PRAGMA table_info(bookmarks)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "visit_count")) {
+    sqlite.exec("ALTER TABLE bookmarks ADD COLUMN visit_count INTEGER NOT NULL DEFAULT 0;");
+  }
 
   const existing = sqlite.prepare("SELECT COUNT(*) AS count FROM folders").get() as { count: number };
   if (existing.count === 0) seed();
@@ -90,6 +100,7 @@ function seed() {
       folderId: "fld_agent",
       pinned: true,
       pinnedOrder: 1,
+      visitCount: 42,
       tags: ["模型", "API", "Agent"]
     },
     {
@@ -101,6 +112,7 @@ function seed() {
       folderId: "fld_gen",
       pinned: true,
       pinnedOrder: 2,
+      visitCount: 36,
       tags: ["生图", "生视频", "AIGC"]
     },
     {
@@ -112,6 +124,7 @@ function seed() {
       folderId: "fld_gen",
       pinned: false,
       pinnedOrder: null,
+      visitCount: 28,
       tags: ["生图", "设计", "灵感"]
     },
     {
@@ -123,6 +136,7 @@ function seed() {
       folderId: "fld_gen",
       pinned: false,
       pinnedOrder: null,
+      visitCount: 15,
       tags: ["生图", "实时生成"]
     },
     {
@@ -134,6 +148,7 @@ function seed() {
       folderId: "fld_docs",
       pinned: true,
       pinnedOrder: 3,
+      visitCount: 22,
       tags: ["文档", "知识库"]
     },
     {
@@ -145,6 +160,7 @@ function seed() {
       folderId: "fld_design",
       pinned: true,
       pinnedOrder: 4,
+      visitCount: 31,
       tags: ["设计", "原型"]
     }
   ];
@@ -160,6 +176,7 @@ function seed() {
         folderId: sample.folderId,
         pinned: sample.pinned,
         pinnedOrder: sample.pinnedOrder,
+        visitCount: sample.visitCount,
         createdAt: t,
         updatedAt: t
       })
@@ -284,6 +301,7 @@ export function listBookmarks(filter: { folderId?: string | null; q?: string; ta
       folderName: folders.name,
       pinned: bookmarks.pinned,
       pinnedOrder: bookmarks.pinnedOrder,
+      visitCount: bookmarks.visitCount,
       createdAt: bookmarks.createdAt,
       updatedAt: bookmarks.updatedAt
     })
@@ -319,6 +337,7 @@ export function getBookmark(bookmarkId: string) {
       folderName: folders.name,
       pinned: bookmarks.pinned,
       pinnedOrder: bookmarks.pinnedOrder,
+      visitCount: bookmarks.visitCount,
       createdAt: bookmarks.createdAt,
       updatedAt: bookmarks.updatedAt
     })
@@ -340,15 +359,28 @@ export function createBookmark(input: {
 }) {
   ensureDb();
   const t = now();
+  const url = canonicalBookmarkUrl(input.url);
+  const existing = db.select().from(bookmarks).where(eq(bookmarks.url, url)).get();
+  if (existing) {
+    return updateBookmark(existing.id, {
+      title: input.title,
+      logoUrl: input.logoUrl,
+      description: input.description,
+      folderId: input.folderId ?? null,
+      pinned: input.pinned,
+      tags: input.tags
+    });
+  }
   const row = {
     id: id("bm"),
-    url: input.url,
-    title: input.title.trim() || input.url,
-    logoUrl: input.logoUrl || favicon(new URL(input.url).hostname),
+    url,
+    title: input.title.trim() || url,
+    logoUrl: input.logoUrl || favicon(new URL(url).hostname),
     description: input.description.trim(),
     folderId: input.folderId ?? null,
     pinned: Boolean(input.pinned),
     pinnedOrder: input.pinned ? nextPinnedOrder() : null,
+    visitCount: 0,
     createdAt: t,
     updatedAt: t
   };
@@ -370,9 +402,10 @@ export function updateBookmark(bookmarkId: string, input: Partial<{
   const current = getBookmark(bookmarkId);
   if (!current) return null;
   const pinnedBecameTrue = input.pinned === true && !current.pinned;
+  const url = input.url ? canonicalBookmarkUrl(input.url) : current.url;
   db.update(bookmarks)
     .set({
-      url: input.url ?? current.url,
+      url,
       title: input.title ?? current.title,
       logoUrl: input.logoUrl ?? current.logoUrl,
       description: input.description ?? current.description,
@@ -391,6 +424,17 @@ export function deleteBookmark(bookmarkId: string) {
   ensureDb();
   db.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmarkId)).run();
   db.delete(bookmarks).where(eq(bookmarks.id, bookmarkId)).run();
+}
+
+export function recordBookmarkVisit(bookmarkId: string) {
+  ensureDb();
+  const bookmark = getBookmark(bookmarkId);
+  if (!bookmark) return null;
+  db.update(bookmarks)
+    .set({ visitCount: bookmark.visitCount + 1 })
+    .where(eq(bookmarks.id, bookmarkId))
+    .run();
+  return getBookmark(bookmarkId);
 }
 
 function nextPinnedOrder() {

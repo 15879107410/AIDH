@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createBookmark, listBookmarks } from "@/lib/db";
+import { canonicalBookmarkUrl, createBookmark, listBookmarks } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "URL 不能为空。" }, { status: 400 });
   }
   try {
-    new URL(body.url);
+    body.url = canonicalBookmarkUrl(body.url);
   } catch {
     return NextResponse.json({ message: "请输入有效 URL。" }, { status: 400 });
   }

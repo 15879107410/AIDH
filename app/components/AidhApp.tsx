@@ -8,6 +8,7 @@ import {
   FolderPlus,
   Grid2X2,
   Home,
+  List,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -25,6 +26,8 @@ import type { AiPreview, Bookmark, FolderNode } from "@/lib/types";
 import { SpotlightSearch } from "./SpotlightSearch";
 
 type ViewMode = "all" | "pinned" | "recent" | "folder";
+type ViewLayout = "grid" | "list";
+type SortMode = "default" | "visits";
 type AiState = "idle" | "loading" | "success" | "error";
 type WorkbenchMode = "bookmark" | "folder" | null;
 
@@ -52,7 +55,12 @@ const emptyForm: BookmarkForm = {
 function normalizeUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProtocol).origin;
+  } catch {
+    return withProtocol;
+  }
 }
 
 function flattenFolders(nodes: FolderNode[]): FolderNode[] {
@@ -64,7 +72,10 @@ export function AidhApp() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [viewLayout, setViewLayout] = useState<ViewLayout>("grid");
+  const [sortMode, setSortMode] = useState<SortMode>("default");
   const [query, setQuery] = useState("");
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>(null);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [form, setForm] = useState<BookmarkForm>(emptyForm);
@@ -78,6 +89,7 @@ export function AidhApp() {
   const dockMouseX = useRef<number | null>(null);
 
   const flatFolders = useMemo(() => flattenFolders(folders), [folders]);
+  const selectedFolder = flatFolders.find((folder) => folder.id === selectedFolderId);
   const pinnedBookmarks = bookmarks.filter((bookmark) => bookmark.pinned).slice(0, 8);
   const recentBookmarks = [...bookmarks]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -93,14 +105,61 @@ export function AidhApp() {
             ? bookmarks.filter((bookmark) => bookmark.folderId === selectedFolderId)
             : bookmarks;
     const needle = query.trim().toLowerCase();
-    if (!needle) return base;
-    return base.filter((bookmark) =>
-      [bookmark.title, bookmark.url, bookmark.description, bookmark.folderName ?? "", ...bookmark.tags]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle)
+    const filtered = needle
+      ? base.filter((bookmark) =>
+          [bookmark.title, bookmark.url, bookmark.description, bookmark.folderName ?? "", ...bookmark.tags]
+            .join(" ")
+            .toLowerCase()
+            .includes(needle)
+        )
+      : base;
+    if (sortMode === "visits") {
+      return [...filtered].sort((a, b) => b.visitCount - a.visitCount || b.updatedAt.localeCompare(a.updatedAt));
+    }
+    return filtered;
+  }, [bookmarks, query, recentBookmarks, selectedFolderId, sortMode, viewMode]);
+
+  const folderFilterLabel = selectedFolder ? selectedFolder.name : "全部文件夹";
+
+  const toolbarStateText = useMemo(() => {
+    const parts = [viewLayout === "grid" ? "网格视图" : "列表视图"];
+    if (selectedFolder) parts.push(`文件夹：${selectedFolder.name}`);
+    if (sortMode === "visits") parts.push("按访问量排序");
+    if (viewMode === "pinned") parts.push("只看重点标记");
+    return parts.join(" / ");
+  }, [selectedFolder, sortMode, viewLayout, viewMode]);
+
+  const spotlightResults = query.trim() ? visibleBookmarks : bookmarks.filter((bookmark) => bookmark.tags.includes("生图"));
+
+  function selectFolderFilter(folderId: string | null) {
+    setSelectedFolderId(folderId);
+    setViewMode(folderId ? "folder" : "all");
+    setFolderMenuOpen(false);
+  }
+
+  function handleShortcut(shortcut: "layout" | "folder" | "popular" | "pinned") {
+    if (shortcut === "layout") {
+      setViewLayout((current) => (current === "grid" ? "list" : "grid"));
+      return;
+    }
+    if (shortcut === "folder") {
+      setFolderMenuOpen((current) => !current);
+      return;
+    }
+    if (shortcut === "popular") {
+      setSortMode((current) => (current === "visits" ? "default" : "visits"));
+      return;
+    }
+    setViewMode((current) => (current === "pinned" ? "all" : "pinned"));
+    if (viewMode !== "pinned") setSelectedFolderId(null);
+  }
+
+  async function recordVisit(bookmark: Bookmark) {
+    setBookmarks((current) =>
+      current.map((item) => (item.id === bookmark.id ? { ...item, visitCount: item.visitCount + 1 } : item))
     );
-  }, [bookmarks, query, recentBookmarks, selectedFolderId, viewMode]);
+    await fetch(`/api/bookmarks/${bookmark.id}`, { method: "POST" });
+  }
 
   const refresh = useCallback(async () => {
     const [folderRes, bookmarkRes] = await Promise.all([fetch("/api/folders"), fetch("/api/bookmarks")]);
@@ -279,7 +338,7 @@ export function AidhApp() {
       body: JSON.stringify({ pinned: !bookmark.pinned })
     });
     await refresh();
-    showToast(bookmark.pinned ? "已从 Dock 移除" : "已加入 Dock 常用");
+    showToast(bookmark.pinned ? "已取消重点标记" : "已标记为重点");
   }
 
   async function removeBookmark(bookmark: Bookmark) {
@@ -329,8 +388,6 @@ export function AidhApp() {
     await refresh();
     showToast("文件夹已删除");
   }
-
-  const spotlightResults = query.trim() ? visibleBookmarks : bookmarks.filter((bookmark) => bookmark.tags.includes("生图"));
 
   return (
     <main className="desktop-shell">
@@ -431,7 +488,37 @@ export function AidhApp() {
 
           <section className="content">
             <div className="hero-search">
-              <SpotlightSearch value={query} onChange={setQuery} results={visibleBookmarks} onFocusSearch={() => {}} />
+              <SpotlightSearch
+                value={query}
+                onChange={setQuery}
+                results={visibleBookmarks}
+                onFocusSearch={() => {}}
+                layout={viewLayout}
+                folderFilterLabel={folderFilterLabel}
+                popularActive={sortMode === "visits"}
+                pinnedActive={viewMode === "pinned"}
+                onShortcut={handleShortcut}
+                folderMenu={
+                  folderMenuOpen ? (
+                    <div className="folder-filter-menu" role="menu" aria-label="文件夹筛选">
+                      <button className={!selectedFolderId ? "active" : ""} onClick={() => selectFolderFilter(null)}>
+                        <span>全部文件夹</span>
+                        <strong>{bookmarks.length}</strong>
+                      </button>
+                      {flatFolders.map((folder) => (
+                        <button
+                          key={folder.id}
+                          className={selectedFolderId === folder.id ? "active" : ""}
+                          onClick={() => selectFolderFilter(folder.id)}
+                        >
+                          <span>{folder.name}</span>
+                          <strong>{folder.count}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null
+                }
+              />
             </div>
 
             {workbenchMode === "bookmark" && (
@@ -538,15 +625,21 @@ export function AidhApp() {
             )}
 
             <section className="content-section">
+              <div className="view-state-row">
+                <span>{toolbarStateText}</span>
+                <strong>{visibleBookmarks.length} 个收藏</strong>
+              </div>
               {visibleBookmarks.length ? (
-                <div className="bookmark-grid">
+                <div className={viewLayout === "grid" ? "bookmark-grid" : "bookmark-list"}>
                   {visibleBookmarks.map((bookmark) => (
                     <BookmarkCard
                       key={bookmark.id}
                       bookmark={bookmark}
+                      layout={viewLayout}
                       onEdit={openEdit}
                       onDelete={removeBookmark}
                       onTogglePinned={togglePinned}
+                      onVisit={recordVisit}
                     />
                   ))}
                 </div>
@@ -583,6 +676,7 @@ export function AidhApp() {
             href={bookmark.url}
             target="_blank"
             rel="noreferrer"
+            onClick={() => recordVisit(bookmark)}
             style={{ ["--label" as string]: `"${bookmark.title}"` }}
           >
             <img src={bookmark.logoUrl} alt="" />
@@ -613,7 +707,14 @@ export function AidhApp() {
               <p className="result-label">{query ? "智能匹配" : "推荐：生图相关"}</p>
               {spotlightResults.length ? (
                 spotlightResults.slice(0, 8).map((bookmark) => (
-                  <a key={bookmark.id} className="result-row" href={bookmark.url} target="_blank" rel="noreferrer">
+                  <a
+                    key={bookmark.id}
+                    className="result-row"
+                    href={bookmark.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => recordVisit(bookmark)}
+                  >
                     <img src={bookmark.logoUrl} alt="" />
                     <span>
                       <strong>{bookmark.title}</strong>
@@ -701,21 +802,25 @@ function FolderItem({
 
 function BookmarkCard({
   bookmark,
+  layout,
   onEdit,
   onDelete,
-  onTogglePinned
+  onTogglePinned,
+  onVisit
 }: {
   bookmark: Bookmark;
+  layout: ViewLayout;
   onEdit: (bookmark: Bookmark) => void;
   onDelete: (bookmark: Bookmark) => void;
   onTogglePinned: (bookmark: Bookmark) => void;
+  onVisit: (bookmark: Bookmark) => void;
 }) {
   return (
-    <article className="bookmark-card">
+    <article className={`bookmark-card ${layout === "list" ? "list-card" : ""}`}>
       <div className="card-top">
         <img src={bookmark.logoUrl} alt="" />
         <div className="card-actions">
-          <button className={`star ${bookmark.pinned ? "active" : ""}`} onClick={() => onTogglePinned(bookmark)} aria-label="切换 Dock 常用">
+          <button className={`star ${bookmark.pinned ? "active" : ""}`} onClick={() => onTogglePinned(bookmark)} aria-label="切换重点标记">
             <Star size={17} fill={bookmark.pinned ? "currentColor" : "none"} />
           </button>
           <button onClick={() => onEdit(bookmark)} aria-label="编辑">
@@ -723,7 +828,7 @@ function BookmarkCard({
           </button>
         </div>
       </div>
-      <a href={bookmark.url} target="_blank" rel="noreferrer" className="card-link">
+      <a href={bookmark.url} target="_blank" rel="noreferrer" className="card-link" onClick={() => onVisit(bookmark)}>
         <h3>{bookmark.title}</h3>
         <p>{bookmark.description || bookmark.url}</p>
       </a>
@@ -737,6 +842,7 @@ function BookmarkCard({
       </div>
       <footer className="card-footer">
         <span>{bookmark.folderName ?? "未分类"}</span>
+        <small>{bookmark.visitCount} 次访问</small>
         <button onClick={() => onDelete(bookmark)}>删除</button>
       </footer>
     </article>

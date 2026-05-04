@@ -17,6 +17,7 @@ export type Bookmark = {
   folderName?: string | null;
   pinned: boolean;
   pinnedOrder: number | null;
+  visitCount: number;
   createdAt: string;
   updatedAt: string;
   tags: string[];
@@ -29,11 +30,12 @@ export type FolderNode = Folder & {
 
 export type AiPreview = {
   title: string;
+  url: string;
   logoUrl: string;
   description: string;
   tags: string[];
   suggestedFolderId: string | null;
   suggestedFolderName: string | null;
   confidence: number;
-  source: "mock";
+  source: "mock" | "deepseek";
 };
