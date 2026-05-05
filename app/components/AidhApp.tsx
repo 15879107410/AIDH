@@ -91,6 +91,17 @@ function collectFolderIds(folder: FolderNode): string[] {
   return [folder.id, ...folder.children.flatMap(collectFolderIds)];
 }
 
+function getContextMenuPosition(event: MouseEvent, size: { width: number; height: number }) {
+  const padding = 12;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const x = Math.min(Math.max(event.clientX, padding), viewportWidth - size.width - padding);
+  const opensUp = event.clientY + size.height + padding > viewportHeight;
+  const rawY = opensUp ? event.clientY - size.height : event.clientY;
+  const y = Math.min(Math.max(rawY, padding), viewportHeight - size.height - padding);
+  return { x, y };
+}
+
 export function AidhApp() {
   const [folders, setFolders] = useState<FolderNode[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -112,8 +123,12 @@ export function AidhApp() {
   const [aiMessage, setAiMessage] = useState("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
   const [toast, setToast] = useState("");
   const [folderMenu, setFolderMenu] = useState<{ folder: FolderNode; x: number; y: number } | null>(null);
+  const [dockMenu, setDockMenu] = useState<{ bookmark: Bookmark; x: number; y: number } | null>(null);
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ type: "dock" | "folder"; id?: string } | null>(null);
+  const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
+  const [dockDragDetached, setDockDragDetached] = useState(false);
+  const [dockPreviewIds, setDockPreviewIds] = useState<string[] | null>(null);
   const dockItemRefs = useRef<(HTMLElement | null)[]>([]);
   const dockCenters = useRef<number[]>([]);
   const dockFrame = useRef<number | null>(null);
@@ -121,6 +136,7 @@ export function AidhApp() {
 
   const flatFolders = useMemo(() => flattenFolders(folders), [folders]);
   const folderOptions = useMemo(() => flattenFolderOptions(folders), [folders]);
+  const bookmarkById = useMemo(() => new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark])), [bookmarks]);
   const selectedFolder = flatFolders.find((folder) => folder.id === selectedFolderId);
   const editingFolder = flatFolders.find((folder) => folder.id === folderForm.id);
   const blockedParentIds = useMemo(() => {
@@ -164,6 +180,7 @@ export function AidhApp() {
   const selectedFolderPath = selectedFolderId
     ? folderOptions.find((folder) => folder.id === selectedFolderId)?.path ?? selectedFolder?.name
     : null;
+  const dockRenderIds = dockPreviewIds ?? pinnedBookmarks.map((bookmark) => bookmark.id);
 
   const toolbarStateText = useMemo(() => {
     const parts = [viewLayout === "grid" ? "网格视图" : "列表视图"];
@@ -238,7 +255,10 @@ export function AidhApp() {
   }, []);
 
   useEffect(() => {
-    const closeMenu = () => setFolderMenu(null);
+    const closeMenu = () => {
+      setFolderMenu(null);
+      setDockMenu(null);
+    };
     window.addEventListener("click", closeMenu);
     window.addEventListener("scroll", closeMenu, true);
     return () => {
@@ -309,6 +329,21 @@ export function AidhApp() {
     }
     await refresh();
     showToast(input.pinned ? "已加入 Dock" : "已移动到文件夹");
+    return true;
+  }
+
+  async function saveDockOrder(ids: string[]) {
+    const response = await fetch("/api/bookmarks/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids })
+    });
+    if (!response.ok) {
+      const json = await response.json();
+      showToast(json.message ?? "Dock 排序失败");
+      return false;
+    }
+    await refresh();
     return true;
   }
 
@@ -503,7 +538,17 @@ export function AidhApp() {
   function openFolderMenu(folder: FolderNode, event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    setFolderMenu({ folder, x: event.clientX, y: event.clientY });
+    const position = getContextMenuPosition(event, { width: 180, height: 130 });
+    setFolderMenu({ folder, ...position });
+    setDockMenu(null);
+  }
+
+  function openDockMenu(bookmark: Bookmark, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const position = getContextMenuPosition(event, { width: 184, height: selectedFolderId ? 168 : 130 });
+    setDockMenu({ bookmark, ...position });
+    setFolderMenu(null);
   }
 
   function beginDrag(bookmarkId: string, event: DragEvent<Element>) {
@@ -511,27 +556,76 @@ export function AidhApp() {
     event.dataTransfer.setData("text/plain", bookmarkId);
     setDraggingBookmarkId(bookmarkId);
     setDropTarget(null);
+    setDockDragDetached(false);
   }
 
   function endDrag() {
     setDraggingBookmarkId(null);
     setDropTarget(null);
+    setDockDropIndex(null);
+    setDockDragDetached(false);
+    setDockPreviewIds(null);
   }
 
   async function dropToDock(event: DragEvent<Element>) {
     event.preventDefault();
+    event.stopPropagation();
     const bookmarkId = event.dataTransfer.getData("text/plain") || draggingBookmarkId;
     if (!bookmarkId) return;
-    await moveBookmark(bookmarkId, { folderId: null, pinned: true });
+    const currentBookmark = bookmarkById.get(bookmarkId);
+    const currentPinnedIds = pinnedBookmarks.map((bookmark) => bookmark.id).filter((id) => id !== bookmarkId);
+    const nextIndex = dockDropIndex ?? currentPinnedIds.length;
+    const reorderedIds = [...currentPinnedIds];
+    reorderedIds.splice(nextIndex, 0, bookmarkId);
+    const moved = await moveBookmark(bookmarkId, { folderId: currentBookmark?.folderId ?? null, pinned: true });
+    if (moved) {
+      await saveDockOrder(reorderedIds);
+      showToast("Dock 顺序已更新");
+    }
     endDrag();
   }
 
   async function dropToFolder(folderId: string, event: DragEvent<Element>) {
     event.preventDefault();
+    event.stopPropagation();
     const bookmarkId = event.dataTransfer.getData("text/plain") || draggingBookmarkId;
     if (!bookmarkId) return;
     await moveBookmark(bookmarkId, { folderId, pinned: false });
     endDrag();
+  }
+
+  async function dropOutOfDock(event: DragEvent<HTMLElement>) {
+    if (!draggingBookmarkId) return;
+    if (dropTarget?.type === "dock" || dropTarget?.type === "folder") return;
+    const bookmark = bookmarkById.get(draggingBookmarkId);
+    if (!bookmark?.pinned) return;
+    event.preventDefault();
+    const fallbackFolderId = bookmark.folderId ?? selectedFolderId ?? null;
+    await moveBookmark(bookmark.id, { folderId: fallbackFolderId, pinned: false });
+    showToast("已从 Dock 移出");
+    endDrag();
+  }
+
+  function updateDockDropIndex(clientX: number) {
+    if (!pinnedBookmarks.length) {
+      setDockDropIndex(0);
+      if (draggingBookmarkId) setDockPreviewIds([draggingBookmarkId]);
+      return;
+    }
+    const centers = dockItemRefs.current
+      .slice(0, pinnedBookmarks.length)
+      .map((node) => {
+        if (!node) return Number.POSITIVE_INFINITY;
+        const rect = node.getBoundingClientRect();
+        return rect.left + rect.width / 2;
+      });
+    const index = centers.findIndex((center) => clientX < center);
+    const nextIndex = index === -1 ? pinnedBookmarks.length : index;
+    setDockDropIndex(nextIndex);
+    if (!draggingBookmarkId) return;
+    const reorderedIds = pinnedBookmarks.map((bookmark) => bookmark.id).filter((id) => id !== draggingBookmarkId);
+    reorderedIds.splice(nextIndex, 0, draggingBookmarkId);
+    setDockPreviewIds(reorderedIds);
   }
 
   function handleFolderContextAction(action: "edit" | "add" | "delete") {
@@ -541,6 +635,28 @@ export function AidhApp() {
     if (action === "edit") openFolderSheet(folder);
     if (action === "add") openFolderSheet(undefined, folder.id);
     if (action === "delete") setPendingFolderDelete(folder);
+  }
+
+  async function handleDockContextAction(action: "open" | "edit" | "unpin" | "move-current") {
+    if (!dockMenu) return;
+    const bookmark = dockMenu.bookmark;
+    setDockMenu(null);
+    if (action === "open") {
+      await recordVisit(bookmark);
+      window.open(bookmark.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (action === "edit") {
+      openEdit(bookmark);
+      return;
+    }
+    if (action === "move-current") {
+      await moveBookmark(bookmark.id, { folderId: selectedFolderId, pinned: false });
+      showToast(selectedFolderPath ? `已移到「${selectedFolderPath}」` : "已移出 Dock");
+      return;
+    }
+    await moveBookmark(bookmark.id, { folderId: bookmark.folderId ?? null, pinned: false });
+    showToast("已从 Dock 移出");
   }
 
   async function removeFolder(folder: FolderNode) {
@@ -561,7 +677,20 @@ export function AidhApp() {
   }
 
   return (
-    <main className="desktop-shell">
+    <main
+      className="desktop-shell"
+      onDragOver={(event) => {
+        if (!draggingBookmarkId) return;
+        const bookmark = bookmarkById.get(draggingBookmarkId);
+        if (!bookmark?.pinned) return;
+        event.preventDefault();
+        setDockDragDetached(dropTarget?.type !== "dock");
+        if (dropTarget?.type !== "folder" && dropTarget?.type !== "dock") {
+          setDropTarget(null);
+        }
+      }}
+      onDrop={dropOutOfDock}
+    >
       <div className="wallpaper-grid" />
       <section className="mac-window" aria-label="AIDH Mac 风格收藏导航站">
         <header className="window-bar">
@@ -869,7 +998,7 @@ export function AidhApp() {
       </section>
 
       <nav
-        className="dock"
+        className={`dock ${dockDropIndex !== null ? "has-drop-marker" : ""} ${dockDragDetached ? "is-detached" : ""}`}
         aria-label="常用网址 Dock"
         onMouseEnter={(event) => enterDock(event.currentTarget)}
         onMouseMove={(event) => scheduleDockUpdate(event.clientX)}
@@ -878,16 +1007,21 @@ export function AidhApp() {
           if (!draggingBookmarkId) return;
           event.preventDefault();
           setDropTarget({ type: "dock" });
+          setDockDragDetached(false);
+          updateDockDropIndex(event.clientX);
         }}
         onDrop={dropToDock}
       >
-        {pinnedBookmarks.map((bookmark, index) => (
+        {dockRenderIds.map((bookmarkId, index) => {
+          const bookmark = bookmarkById.get(bookmarkId);
+          if (!bookmark) return null;
+          return (
           <a
             key={bookmark.id}
             ref={(node) => {
               dockItemRefs.current[index] = node;
             }}
-            className={`dock-item ${draggingBookmarkId === bookmark.id ? "is-dragging" : ""}`}
+            className={`dock-item ${draggingBookmarkId === bookmark.id ? "is-dragging" : ""} ${dockDropIndex === index ? "drop-before" : ""} ${dockPreviewIds?.[index] === bookmark.id ? "is-previewing" : ""}`}
             href={bookmark.url}
             target="_blank"
             rel="noreferrer"
@@ -896,10 +1030,14 @@ export function AidhApp() {
             draggable
             onDragStart={(event) => beginDrag(bookmark.id, event)}
             onDragEnd={endDrag}
+            onContextMenu={(event) => openDockMenu(bookmark, event)}
           >
             <img src={bookmark.logoUrl} alt="" />
           </a>
-        ))}
+          );
+        })}
+        {dockDropIndex === dockRenderIds.length && dockRenderIds.length > 0 && <span className="dock-insert-marker end" />}
+        {!dockRenderIds.length && dockDropIndex === 0 && <span className="dock-empty-drop">拖到这里加入 Dock</span>}
         <span className="dock-divider" />
         <button
           ref={(node) => {
@@ -912,6 +1050,39 @@ export function AidhApp() {
           <Plus size={28} />
         </button>
       </nav>
+
+      {draggingBookmarkId && bookmarkById.get(draggingBookmarkId)?.pinned && dockDragDetached && (
+        <div className={`dock-drag-hint ${dropTarget?.type === "folder" ? "is-folder" : ""}`}>
+          {dropTarget?.type === "folder" ? "松手移到文件夹" : "松手从 Dock 移出"}
+        </div>
+      )}
+
+      {dockMenu && (
+        <div
+          className="folder-context-menu dock-context-menu"
+          style={{ left: dockMenu.x, top: dockMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={() => void handleDockContextAction("open")}>
+            <Sparkles size={14} />
+            打开网址
+          </button>
+          <button type="button" onClick={() => void handleDockContextAction("edit")}>
+            <Pencil size={14} />
+            编辑收藏
+          </button>
+          {selectedFolderId && (
+            <button type="button" onClick={() => void handleDockContextAction("move-current")}>
+              <FolderClosed size={14} />
+              移到当前文件夹
+            </button>
+          )}
+          <button type="button" className="danger" onClick={() => void handleDockContextAction("unpin")}>
+            <X size={14} />
+            从 Dock 移出
+          </button>
+        </div>
+      )}
 
       {spotlightOpen && (
         <div className="spotlight-backdrop" onMouseDown={() => setSpotlightOpen(false)}>

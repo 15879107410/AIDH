@@ -551,6 +551,7 @@ export function updateBookmark(bookmarkId: string, input: Partial<{
   description: string;
   folderId: string | null;
   pinned: boolean;
+  pinnedOrder: number | null;
   tags: string[];
 }>) {
   ensureDb();
@@ -566,7 +567,14 @@ export function updateBookmark(bookmarkId: string, input: Partial<{
       description: input.description ?? current.description,
       folderId: input.folderId === undefined ? current.folderId : input.folderId,
       pinned: input.pinned ?? current.pinned,
-      pinnedOrder: pinnedBecameTrue ? nextPinnedOrder() : input.pinned === false ? null : current.pinnedOrder,
+      pinnedOrder:
+        input.pinnedOrder !== undefined
+          ? input.pinnedOrder
+          : pinnedBecameTrue
+            ? nextPinnedOrder()
+            : input.pinned === false
+              ? null
+              : current.pinnedOrder,
       updatedAt: now()
     })
     .where(eq(bookmarks.id, bookmarkId))
@@ -595,6 +603,17 @@ export function recordBookmarkVisit(bookmarkId: string) {
 function nextPinnedOrder() {
   const row = db.select({ value: sql<number>`coalesce(max(${bookmarks.pinnedOrder}), 0)` }).from(bookmarks).get();
   return Number(row?.value ?? 0) + 1;
+}
+
+export function reorderPinnedBookmarks(ids: string[]) {
+  ensureDb();
+  const t = now();
+  ids.forEach((id, index) => {
+    db.update(bookmarks)
+      .set({ pinned: true, pinnedOrder: index + 1, updatedAt: t })
+      .where(eq(bookmarks.id, id))
+      .run();
+  });
 }
 
 export function setBookmarkTags(bookmarkId: string, names: string[]) {
