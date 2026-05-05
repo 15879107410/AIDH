@@ -128,6 +128,7 @@ export function AidhApp() {
   const [toast, setToast] = useState("");
   const [folderMenu, setFolderMenu] = useState<{ folder: FolderNode; x: number; y: number } | null>(null);
   const [dockMenu, setDockMenu] = useState<{ bookmark: Bookmark; x: number; y: number } | null>(null);
+  const [bookmarkMenu, setBookmarkMenu] = useState<{ bookmark: Bookmark; x: number; y: number } | null>(null);
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ type: "dock" | "folder"; id?: string } | null>(null);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
@@ -275,6 +276,7 @@ export function AidhApp() {
     const closeMenu = () => {
       setFolderMenu(null);
       setDockMenu(null);
+      setBookmarkMenu(null);
     };
     window.addEventListener("click", closeMenu);
     window.addEventListener("scroll", closeMenu, true);
@@ -600,6 +602,16 @@ export function AidhApp() {
     const position = getContextMenuPosition(event, { width: 184, height: selectedFolderId ? 168 : 130 });
     setDockMenu({ bookmark, ...position });
     setFolderMenu(null);
+    setBookmarkMenu(null);
+  }
+
+  function openBookmarkMenu(bookmark: Bookmark, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const position = getContextMenuPosition(event, { width: 184, height: 178 });
+    setBookmarkMenu({ bookmark, ...position });
+    setFolderMenu(null);
+    setDockMenu(null);
   }
 
   function beginDrag(bookmarkId: string, event: DragEvent<Element>) {
@@ -717,6 +729,26 @@ export function AidhApp() {
     }
     await moveBookmark(bookmark.id, { folderId: bookmark.folderId ?? null, pinned: false });
     showToast("已从 Dock 移出");
+  }
+
+  async function handleBookmarkContextAction(action: "open" | "edit" | "toggle-dock" | "delete") {
+    if (!bookmarkMenu) return;
+    const bookmark = bookmarkMenu.bookmark;
+    setBookmarkMenu(null);
+    if (action === "open") {
+      await recordVisit(bookmark);
+      window.open(bookmark.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (action === "edit") {
+      openEdit(bookmark);
+      return;
+    }
+    if (action === "toggle-dock") {
+      await togglePinned(bookmark);
+      return;
+    }
+    setPendingBookmarkDelete(bookmark);
   }
 
   async function removeFolder(folder: FolderNode) {
@@ -1019,6 +1051,31 @@ export function AidhApp() {
               </div>
             )}
 
+            {bookmarkMenu && (
+              <div
+                className="folder-context-menu bookmark-context-menu"
+                style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" onClick={() => void handleBookmarkContextAction("open")}>
+                  <Sparkles size={14} />
+                  打开网址
+                </button>
+                <button type="button" onClick={() => void handleBookmarkContextAction("edit")}>
+                  <Pencil size={14} />
+                  编辑收藏
+                </button>
+                <button type="button" onClick={() => void handleBookmarkContextAction("toggle-dock")}>
+                  <Star size={14} fill={bookmarkMenu.bookmark.pinned ? "currentColor" : "none"} />
+                  {bookmarkMenu.bookmark.pinned ? "移出 Dock" : "加入 Dock"}
+                </button>
+                <button type="button" className="danger" onClick={() => void handleBookmarkContextAction("delete")}>
+                  <Trash2 size={14} />
+                  删除收藏
+                </button>
+              </div>
+            )}
+
             <section className="content-section">
               <div className="view-state-row">
                 <span>{toolbarStateText}</span>
@@ -1032,12 +1089,10 @@ export function AidhApp() {
                       bookmark={bookmark}
                       layout={viewLayout}
                       dragging={draggingBookmarkId === bookmark.id}
-                      onEdit={openEdit}
-                      onDelete={setPendingBookmarkDelete}
-                      onTogglePinned={togglePinned}
                       onVisit={recordVisit}
                       onDragStart={beginDrag}
                       onDragEnd={endDrag}
+                      onContextMenu={openBookmarkMenu}
                     />
                   ))}
                 </div>
@@ -1406,22 +1461,18 @@ function BookmarkCard({
   bookmark,
   layout,
   dragging,
-  onEdit,
-  onDelete,
-  onTogglePinned,
   onVisit,
   onDragStart,
-  onDragEnd
+  onDragEnd,
+  onContextMenu
 }: {
   bookmark: Bookmark;
   layout: ViewLayout;
   dragging: boolean;
-  onEdit: (bookmark: Bookmark) => void;
-  onDelete: (bookmark: Bookmark) => void;
-  onTogglePinned: (bookmark: Bookmark) => void;
   onVisit: (bookmark: Bookmark) => void;
   onDragStart: (bookmarkId: string, event: DragEvent<Element>) => void;
   onDragEnd: () => void;
+  onContextMenu: (bookmark: Bookmark, event: MouseEvent) => void;
 }) {
   return (
     <article
@@ -1429,14 +1480,12 @@ function BookmarkCard({
       draggable
       onDragStart={(event) => onDragStart(bookmark.id, event)}
       onDragEnd={onDragEnd}
+      onContextMenu={(event) => onContextMenu(bookmark, event)}
     >
       <div className="card-top">
         <img src={bookmark.logoUrl} alt="" />
         <div className="card-actions">
-          <button className={`star ${bookmark.pinned ? "active" : ""}`} onClick={() => onTogglePinned(bookmark)} aria-label="切换重点标记">
-            <Star size={17} fill={bookmark.pinned ? "currentColor" : "none"} />
-          </button>
-          <button onClick={() => onEdit(bookmark)} aria-label="编辑">
+          <button onClick={(event) => onContextMenu(bookmark, event)} aria-label="更多操作">
             <MoreHorizontal size={17} />
           </button>
         </div>
@@ -1456,7 +1505,6 @@ function BookmarkCard({
       <footer className="card-footer">
         <span>{bookmark.folderPath ?? bookmark.folderName ?? "未分类"}</span>
         <small>{bookmark.visitCount} 次访问</small>
-        <button onClick={() => onDelete(bookmark)}>删除</button>
       </footer>
     </article>
   );

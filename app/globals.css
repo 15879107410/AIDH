@@ -415,7 +415,8 @@ kbd {
   color: #d34b4b;
 }
 
-.dock-context-menu {
+.dock-context-menu,
+.bookmark-context-menu {
   z-index: 60;
   min-width: 172px;
 }
