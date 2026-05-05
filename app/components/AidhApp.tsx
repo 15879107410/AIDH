@@ -25,7 +25,7 @@ import {
   Upload,
   X
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AiPreview, Bookmark, FolderNode } from "@/lib/types";
 import { SpotlightSearch } from "./SpotlightSearch";
 
@@ -111,6 +111,9 @@ export function AidhApp() {
   const [aiState, setAiState] = useState<AiState>("idle");
   const [aiMessage, setAiMessage] = useState("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
   const [toast, setToast] = useState("");
+  const [folderMenu, setFolderMenu] = useState<{ folder: FolderNode; x: number; y: number } | null>(null);
+  const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ type: "dock" | "folder"; id?: string } | null>(null);
   const dockItemRefs = useRef<(HTMLElement | null)[]>([]);
   const dockCenters = useRef<number[]>([]);
   const dockFrame = useRef<number | null>(null);
@@ -234,6 +237,16 @@ export function AidhApp() {
     };
   }, []);
 
+  useEffect(() => {
+    const closeMenu = () => setFolderMenu(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, []);
+
   function cacheDockCenters() {
     dockCenters.current = dockItemRefs.current.map((node) => {
       if (!node) return 0;
@@ -281,6 +294,22 @@ export function AidhApp() {
   function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2000);
+  }
+
+  async function moveBookmark(bookmarkId: string, input: { folderId: string | null; pinned: boolean }) {
+    const response = await fetch(`/api/bookmarks/${bookmarkId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) {
+      const json = await response.json();
+      showToast(json.message ?? "移动失败");
+      return false;
+    }
+    await refresh();
+    showToast(input.pinned ? "已加入 Dock" : "已移动到文件夹");
+    return true;
   }
 
   function exportBookmarks() {
@@ -423,11 +452,16 @@ export function AidhApp() {
   }
 
   async function togglePinned(bookmark: Bookmark) {
-    await fetch(`/api/bookmarks/${bookmark.id}`, {
+    const response = await fetch(`/api/bookmarks/${bookmark.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !bookmark.pinned })
     });
+    if (!response.ok) {
+      const json = await response.json();
+      showToast(json.message ?? "保存失败");
+      return;
+    }
     await refresh();
     showToast(bookmark.pinned ? "已取消重点标记" : "已标记为重点");
   }
@@ -464,6 +498,49 @@ export function AidhApp() {
     setWorkbenchMode(null);
     await refresh();
     showToast(folderForm.id ? "文件夹已更新" : "文件夹已创建");
+  }
+
+  function openFolderMenu(folder: FolderNode, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    setFolderMenu({ folder, x: event.clientX, y: event.clientY });
+  }
+
+  function beginDrag(bookmarkId: string, event: DragEvent<Element>) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", bookmarkId);
+    setDraggingBookmarkId(bookmarkId);
+    setDropTarget(null);
+  }
+
+  function endDrag() {
+    setDraggingBookmarkId(null);
+    setDropTarget(null);
+  }
+
+  async function dropToDock(event: DragEvent<Element>) {
+    event.preventDefault();
+    const bookmarkId = event.dataTransfer.getData("text/plain") || draggingBookmarkId;
+    if (!bookmarkId) return;
+    await moveBookmark(bookmarkId, { folderId: null, pinned: true });
+    endDrag();
+  }
+
+  async function dropToFolder(folderId: string, event: DragEvent<Element>) {
+    event.preventDefault();
+    const bookmarkId = event.dataTransfer.getData("text/plain") || draggingBookmarkId;
+    if (!bookmarkId) return;
+    await moveBookmark(bookmarkId, { folderId, pinned: false });
+    endDrag();
+  }
+
+  function handleFolderContextAction(action: "edit" | "add" | "delete") {
+    if (!folderMenu) return;
+    const folder = folderMenu.folder;
+    setFolderMenu(null);
+    if (action === "edit") openFolderSheet(folder);
+    if (action === "add") openFolderSheet(undefined, folder.id);
+    if (action === "delete") setPendingFolderDelete(folder);
   }
 
   async function removeFolder(folder: FolderNode) {
@@ -552,6 +629,7 @@ export function AidhApp() {
                   key={folder.id}
                   folder={folder}
                   activeId={selectedFolderId}
+                  dropTargetId={dropTarget?.type === "folder" ? dropTarget.id ?? null : null}
                   onSelect={(id) => {
                     setViewMode("folder");
                     setSelectedFolderId(id);
@@ -559,6 +637,9 @@ export function AidhApp() {
                   onEdit={openFolderSheet}
                   onAddChild={(folder) => openFolderSheet(undefined, folder.id)}
                   onDelete={setPendingFolderDelete}
+                  onDropBookmark={dropToFolder}
+                  onDragTargetChange={(id) => setDropTarget(id ? { type: "folder", id } : null)}
+                  onContextMenu={openFolderMenu}
                 />
               ))}
             </nav>
@@ -728,6 +809,27 @@ export function AidhApp() {
               </section>
             )}
 
+            {folderMenu && (
+              <div
+                className="folder-context-menu"
+                style={{ left: folderMenu.x, top: folderMenu.y }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" onClick={() => handleFolderContextAction("edit")}>
+                  <Pencil size={14} />
+                  编辑文件夹
+                </button>
+                <button type="button" onClick={() => handleFolderContextAction("add")}>
+                  <FolderPlus size={14} />
+                  新建子文件夹
+                </button>
+                <button type="button" className="danger" onClick={() => handleFolderContextAction("delete")}>
+                  <Trash2 size={14} />
+                  删除文件夹
+                </button>
+              </div>
+            )}
+
             <section className="content-section">
               <div className="view-state-row">
                 <span>{toolbarStateText}</span>
@@ -740,10 +842,13 @@ export function AidhApp() {
                       key={bookmark.id}
                       bookmark={bookmark}
                       layout={viewLayout}
+                      dragging={draggingBookmarkId === bookmark.id}
                       onEdit={openEdit}
                       onDelete={setPendingBookmarkDelete}
                       onTogglePinned={togglePinned}
                       onVisit={recordVisit}
+                      onDragStart={beginDrag}
+                      onDragEnd={endDrag}
                     />
                   ))}
                 </div>
@@ -769,6 +874,12 @@ export function AidhApp() {
         onMouseEnter={(event) => enterDock(event.currentTarget)}
         onMouseMove={(event) => scheduleDockUpdate(event.clientX)}
         onMouseLeave={(event) => leaveDock(event.currentTarget)}
+        onDragOver={(event) => {
+          if (!draggingBookmarkId) return;
+          event.preventDefault();
+          setDropTarget({ type: "dock" });
+        }}
+        onDrop={dropToDock}
       >
         {pinnedBookmarks.map((bookmark, index) => (
           <a
@@ -776,12 +887,15 @@ export function AidhApp() {
             ref={(node) => {
               dockItemRefs.current[index] = node;
             }}
-            className="dock-item"
+            className={`dock-item ${draggingBookmarkId === bookmark.id ? "is-dragging" : ""}`}
             href={bookmark.url}
             target="_blank"
             rel="noreferrer"
             onClick={() => recordVisit(bookmark)}
             style={{ ["--label" as string]: `"${bookmark.title}"` }}
+            draggable
+            onDragStart={(event) => beginDrag(bookmark.id, event)}
+            onDragEnd={endDrag}
           >
             <img src={bookmark.logoUrl} alt="" />
           </a>
@@ -940,24 +1054,42 @@ function NavButton({
 function FolderItem({
   folder,
   activeId,
+  dropTargetId,
   level = 0,
   onSelect,
   onEdit,
   onAddChild,
-  onDelete
+  onDelete,
+  onDropBookmark,
+  onDragTargetChange,
+  onContextMenu
 }: {
   folder: FolderNode;
   activeId: string | null;
+  dropTargetId: string | null;
   level?: number;
   onSelect: (id: string) => void;
   onEdit: (folder: FolderNode) => void;
   onAddChild: (folder: FolderNode) => void;
   onDelete: (folder: FolderNode) => void;
+  onDropBookmark: (folderId: string, event: DragEvent<Element>) => Promise<void>;
+  onDragTargetChange: (folderId: string | null) => void;
+  onContextMenu: (folder: FolderNode, event: MouseEvent) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="folder-tree-item" style={{ "--folder-depth": level } as React.CSSProperties}>
-      <div className={`folder-row ${activeId === folder.id ? "active" : ""}`}>
+      <div
+        className={`folder-row ${activeId === folder.id ? "active" : ""} ${dropTargetId === folder.id ? "drop-target" : ""}`}
+        onContextMenu={(event) => onContextMenu(folder, event)}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes("text/plain")) return;
+          event.preventDefault();
+          onDragTargetChange(folder.id);
+        }}
+        onDragLeave={() => onDragTargetChange(null)}
+        onDrop={(event) => onDropBookmark(folder.id, event)}
+      >
         <button className="disclosure" onClick={() => setOpen(!open)} aria-label={open ? "收起文件夹" : "展开文件夹"}>
           {folder.children.length ? open ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span />}
         </button>
@@ -965,15 +1097,6 @@ function FolderItem({
           <FolderClosed size={16} />
           <span>{folder.name}</span>
           <strong>{folder.count}</strong>
-        </button>
-        <button className="row-action" onClick={() => onEdit(folder)} aria-label="编辑文件夹">
-          <Pencil size={13} />
-        </button>
-        <button className="row-action" onClick={() => onAddChild(folder)} aria-label="新建子文件夹">
-          <FolderPlus size={13} />
-        </button>
-        <button className="row-action" onClick={() => onDelete(folder)} aria-label="删除文件夹">
-          <Trash2 size={13} />
         </button>
       </div>
       {open && Boolean(folder.children.length) && (
@@ -983,11 +1106,15 @@ function FolderItem({
               key={child.id}
               folder={child}
               activeId={activeId}
+              dropTargetId={dropTargetId}
               level={level + 1}
               onSelect={onSelect}
               onEdit={onEdit}
               onAddChild={onAddChild}
               onDelete={onDelete}
+              onDropBookmark={onDropBookmark}
+              onDragTargetChange={onDragTargetChange}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
@@ -999,20 +1126,31 @@ function FolderItem({
 function BookmarkCard({
   bookmark,
   layout,
+  dragging,
   onEdit,
   onDelete,
   onTogglePinned,
-  onVisit
+  onVisit,
+  onDragStart,
+  onDragEnd
 }: {
   bookmark: Bookmark;
   layout: ViewLayout;
+  dragging: boolean;
   onEdit: (bookmark: Bookmark) => void;
   onDelete: (bookmark: Bookmark) => void;
   onTogglePinned: (bookmark: Bookmark) => void;
   onVisit: (bookmark: Bookmark) => void;
+  onDragStart: (bookmarkId: string, event: DragEvent<Element>) => void;
+  onDragEnd: () => void;
 }) {
   return (
-    <article className={`bookmark-card ${layout === "list" ? "list-card" : ""}`}>
+    <article
+      className={`bookmark-card ${layout === "list" ? "list-card" : ""} ${dragging ? "is-dragging" : ""}`}
+      draggable
+      onDragStart={(event) => onDragStart(bookmark.id, event)}
+      onDragEnd={onDragEnd}
+    >
       <div className="card-top">
         <img src={bookmark.logoUrl} alt="" />
         <div className="card-actions">
