@@ -25,14 +25,21 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ message: "请输入有效 URL。" }, { status: 400 });
   }
-  const bookmark = createBookmark({
-    url: body.url,
-    title: body.title || body.url,
-    logoUrl: body.logoUrl || "",
-    description: body.description || "",
-    folderId: body.folderId ?? null,
-    pinned: Boolean(body.pinned),
-    tags: Array.isArray(body.tags) ? body.tags : []
-  });
-  return NextResponse.json({ bookmark }, { status: 201 });
+  try {
+    const bookmark = createBookmark({
+      url: body.url,
+      title: body.title || body.url,
+      logoUrl: body.logoUrl || "",
+      description: body.description || "",
+      folderId: body.folderId ?? null,
+      pinned: Boolean(body.pinned),
+      tags: Array.isArray(body.tags) ? body.tags : []
+    });
+    return NextResponse.json({ bookmark }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DOCK_LIMIT_REACHED") {
+      return NextResponse.json({ message: "Dock 区域已经满了，最多只能放 20 个常用网址。" }, { status: 400 });
+    }
+    throw error;
+  }
 }

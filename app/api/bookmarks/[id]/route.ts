@@ -13,9 +13,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ message: "请输入有效 URL。" }, { status: 400 });
     }
   }
-  const bookmark = updateBookmark(id, body);
-  if (!bookmark) return NextResponse.json({ message: "收藏不存在。" }, { status: 404 });
-  return NextResponse.json({ bookmark });
+  try {
+    const bookmark = updateBookmark(id, body);
+    if (!bookmark) return NextResponse.json({ message: "收藏不存在。" }, { status: 404 });
+    return NextResponse.json({ bookmark });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DOCK_LIMIT_REACHED") {
+      return NextResponse.json({ message: "Dock 区域已经满了，最多只能放 20 个常用网址。" }, { status: 400 });
+    }
+    throw error;
+  }
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -44,6 +44,9 @@ type FolderOption = FolderNode & {
   path: string;
 };
 
+const MAX_DOCK_ITEMS = 20;
+const DOCK_LIMIT_MESSAGE = "Dock 区域已经满了，最多只能放 20 个常用网址。";
+
 type BookmarkForm = {
   id?: string;
   url: string;
@@ -119,6 +122,7 @@ export function AidhApp() {
   const [importText, setImportText] = useState("");
   const [pendingBookmarkDelete, setPendingBookmarkDelete] = useState<Bookmark | null>(null);
   const [pendingFolderDelete, setPendingFolderDelete] = useState<FolderNode | null>(null);
+  const [dockManagerOpen, setDockManagerOpen] = useState(false);
   const [aiState, setAiState] = useState<AiState>("idle");
   const [aiMessage, setAiMessage] = useState("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
   const [toast, setToast] = useState("");
@@ -129,6 +133,7 @@ export function AidhApp() {
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
   const [dockDragDetached, setDockDragDetached] = useState(false);
   const [dockPreviewIds, setDockPreviewIds] = useState<string[] | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(1440);
   const dockItemRefs = useRef<(HTMLElement | null)[]>([]);
   const dockCenters = useRef<number[]>([]);
   const dockFrame = useRef<number | null>(null);
@@ -147,7 +152,7 @@ export function AidhApp() {
     if (!selectedFolder) return new Set<string>();
     return new Set(collectFolderIds(selectedFolder));
   }, [selectedFolder]);
-  const pinnedBookmarks = bookmarks.filter((bookmark) => bookmark.pinned).slice(0, 8);
+  const pinnedBookmarks = bookmarks.filter((bookmark) => bookmark.pinned);
   const recentBookmarks = [...bookmarks]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8);
@@ -181,6 +186,11 @@ export function AidhApp() {
     ? folderOptions.find((folder) => folder.id === selectedFolderId)?.path ?? selectedFolder?.name
     : null;
   const dockRenderIds = dockPreviewIds ?? pinnedBookmarks.map((bookmark) => bookmark.id);
+  const dockMaxWidth = Math.max(360, viewportWidth - 44);
+  const dockGapTotal = Math.max(0, dockRenderIds.length + 1) * 8;
+  const dockFixedWidth = 40 + 16 + dockGapTotal;
+  const dockItemSize = Math.max(36, Math.min(60, Math.floor((dockMaxWidth - dockFixedWidth) / Math.max(dockRenderIds.length + 1, 1))));
+  const dockIconSize = Math.max(24, Math.round(dockItemSize * 0.66));
 
   const toolbarStateText = useMemo(() => {
     const parts = [viewLayout === "grid" ? "网格视图" : "列表视图"];
@@ -233,6 +243,13 @@ export function AidhApp() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const syncViewportWidth = () => setViewportWidth(window.innerWidth);
+    syncViewportWidth();
+    window.addEventListener("resize", syncViewportWidth);
+    return () => window.removeEventListener("resize", syncViewportWidth);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -316,7 +333,16 @@ export function AidhApp() {
     window.setTimeout(() => setToast(""), 2000);
   }
 
+  function dockIsFullFor(bookmarkId?: string | null) {
+    if (bookmarkId && bookmarkById.get(bookmarkId)?.pinned) return false;
+    return pinnedBookmarks.length >= MAX_DOCK_ITEMS;
+  }
+
   async function moveBookmark(bookmarkId: string, input: { folderId: string | null; pinned: boolean }) {
+    if (input.pinned && dockIsFullFor(bookmarkId)) {
+      showToast(DOCK_LIMIT_MESSAGE);
+      return false;
+    }
     const response = await fetch(`/api/bookmarks/${bookmarkId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -345,6 +371,23 @@ export function AidhApp() {
     }
     await refresh();
     return true;
+  }
+
+  function openDockManager() {
+    setDockMenu(null);
+    setDockManagerOpen(true);
+  }
+
+  async function moveDockItem(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= pinnedBookmarks.length) return;
+    const ids = pinnedBookmarks.map((bookmark) => bookmark.id);
+    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+    if (await saveDockOrder(ids)) showToast("Dock 顺序已更新");
+  }
+
+  async function removeFromDock(bookmark: Bookmark) {
+    await moveBookmark(bookmark.id, { folderId: bookmark.folderId ?? null, pinned: false });
   }
 
   function exportBookmarks() {
@@ -459,6 +502,10 @@ export function AidhApp() {
 
   async function saveBookmark(event: FormEvent) {
     event.preventDefault();
+    if (form.pinned && dockIsFullFor(form.id)) {
+      showToast(DOCK_LIMIT_MESSAGE);
+      return;
+    }
     const payload = {
       url: normalizeUrl(form.url),
       title: form.title,
@@ -487,6 +534,10 @@ export function AidhApp() {
   }
 
   async function togglePinned(bookmark: Bookmark) {
+    if (!bookmark.pinned && dockIsFullFor(bookmark.id)) {
+      showToast(DOCK_LIMIT_MESSAGE);
+      return;
+    }
     const response = await fetch(`/api/bookmarks/${bookmark.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -572,6 +623,11 @@ export function AidhApp() {
     event.stopPropagation();
     const bookmarkId = event.dataTransfer.getData("text/plain") || draggingBookmarkId;
     if (!bookmarkId) return;
+    if (dockIsFullFor(bookmarkId)) {
+      showToast(DOCK_LIMIT_MESSAGE);
+      endDrag();
+      return;
+    }
     const currentBookmark = bookmarkById.get(bookmarkId);
     const currentPinnedIds = pinnedBookmarks.map((bookmark) => bookmark.id).filter((id) => id !== bookmarkId);
     const nextIndex = dockDropIndex ?? currentPinnedIds.length;
@@ -637,10 +693,14 @@ export function AidhApp() {
     if (action === "delete") setPendingFolderDelete(folder);
   }
 
-  async function handleDockContextAction(action: "open" | "edit" | "unpin" | "move-current") {
+  async function handleDockContextAction(action: "open" | "edit" | "unpin" | "move-current" | "manage") {
     if (!dockMenu) return;
     const bookmark = dockMenu.bookmark;
     setDockMenu(null);
+    if (action === "manage") {
+      setDockManagerOpen(true);
+      return;
+    }
     if (action === "open") {
       await recordVisit(bookmark);
       window.open(bookmark.url, "_blank", "noopener,noreferrer");
@@ -1000,6 +1060,11 @@ export function AidhApp() {
       <nav
         className={`dock ${dockDropIndex !== null ? "has-drop-marker" : ""} ${dockDragDetached ? "is-detached" : ""}`}
         aria-label="常用网址 Dock"
+        style={{
+          ["--dock-item-size" as string]: `${dockItemSize}px`,
+          ["--dock-icon-size" as string]: `${dockIconSize}px`,
+          ["--dock-max-width" as string]: `${dockMaxWidth}px`
+        }}
         onMouseEnter={(event) => enterDock(event.currentTarget)}
         onMouseMove={(event) => scheduleDockUpdate(event.clientX)}
         onMouseLeave={(event) => leaveDock(event.currentTarget)}
@@ -1071,6 +1136,10 @@ export function AidhApp() {
             <Pencil size={14} />
             编辑收藏
           </button>
+          <button type="button" onClick={() => void handleDockContextAction("manage")}>
+            <Settings size={14} />
+            管理 Dock
+          </button>
           {selectedFolderId && (
             <button type="button" onClick={() => void handleDockContextAction("move-current")}>
               <FolderClosed size={14} />
@@ -1136,6 +1205,10 @@ export function AidhApp() {
                 <Download size={18} />
                 <span>导出收藏 JSON</span>
               </button>
+              <button className="settings-action" onClick={openDockManager}>
+                <Star size={18} />
+                <span>管理 Dock</span>
+              </button>
             </div>
             <form className="import-box" onSubmit={importBookmarks}>
               <label className="field wide">
@@ -1152,6 +1225,41 @@ export function AidhApp() {
                 导入
               </button>
             </form>
+          </section>
+        </div>
+      )}
+
+      {dockManagerOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setDockManagerOpen(false)}>
+          <section className="modal-panel dock-manager-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="管理 Dock">
+            <WorkbenchHeader eyebrow="Dock Control" title="管理 Dock" onClose={() => setDockManagerOpen(false)} />
+            <div className="dock-manager-summary">
+              <span>{pinnedBookmarks.length} / {MAX_DOCK_ITEMS}</span>
+              <strong>{pinnedBookmarks.length >= MAX_DOCK_ITEMS ? "Dock 已满，先移出一个再添加。" : "常用网址会显示在底部 Dock。"}</strong>
+            </div>
+            <div className="dock-manager-list">
+              {pinnedBookmarks.map((bookmark, index) => (
+                <div className="dock-manager-row" key={bookmark.id}>
+                  <img src={bookmark.logoUrl} alt="" />
+                  <span>
+                    <strong>{bookmark.title}</strong>
+                    <small>{bookmark.folderPath ?? bookmark.folderName ?? "未分类"}</small>
+                  </span>
+                  <div className="dock-manager-actions">
+                    <button type="button" onClick={() => void moveDockItem(index, -1)} disabled={index === 0} aria-label="上移">
+                      <ChevronRight className="rotate-up" size={16} />
+                    </button>
+                    <button type="button" onClick={() => void moveDockItem(index, 1)} disabled={index === pinnedBookmarks.length - 1} aria-label="下移">
+                      <ChevronRight className="rotate-down" size={16} />
+                    </button>
+                    <button type="button" className="danger" onClick={() => void removeFromDock(bookmark)}>
+                      移出
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!pinnedBookmarks.length && <div className="dock-manager-empty">还没有加入 Dock 的常用网址。</div>}
+            </div>
           </section>
         </div>
       )}

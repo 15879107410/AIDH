@@ -14,6 +14,7 @@ sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite);
+export const MAX_DOCK_ITEMS = 20;
 
 let initialized = false;
 
@@ -27,6 +28,20 @@ function id(prefix: string) {
 
 function favicon(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+}
+
+function pinnedCount() {
+  const row = db.select({ value: sql<number>`count(*)` }).from(bookmarks).where(eq(bookmarks.pinned, true)).get();
+  return row?.value ?? 0;
+}
+
+export function canPinBookmark(bookmarkId?: string | null) {
+  ensureDb();
+  if (bookmarkId) {
+    const current = getBookmark(bookmarkId);
+    if (current?.pinned) return true;
+  }
+  return pinnedCount() < MAX_DOCK_ITEMS;
 }
 
 const equivalentHostRoots = ["magicui.design"];
@@ -133,6 +148,7 @@ export function ensureDb() {
   migrateFolderHierarchy();
   mergeEquivalentBookmarks();
   migrateBookmarkFolders();
+  enforceDockLimit();
   initialized = true;
 }
 
@@ -178,6 +194,21 @@ function mergeEquivalentBookmarks() {
     }
     db.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmark.id)).run();
     db.delete(bookmarks).where(eq(bookmarks.id, bookmark.id)).run();
+  });
+}
+
+function enforceDockLimit() {
+  const t = now();
+  const pinned = db.select().from(bookmarks).where(eq(bookmarks.pinned, true)).orderBy(asc(bookmarks.pinnedOrder), desc(bookmarks.updatedAt)).all();
+  pinned.forEach((bookmark, index) => {
+    db.update(bookmarks)
+      .set({
+        pinned: index < MAX_DOCK_ITEMS,
+        pinnedOrder: index < MAX_DOCK_ITEMS ? index + 1 : null,
+        updatedAt: t
+      })
+      .where(eq(bookmarks.id, bookmark.id))
+      .run();
   });
 }
 
@@ -508,6 +539,9 @@ export function createBookmark(input: {
   tags?: string[];
 }) {
   ensureDb();
+  if (input.pinned && !canPinBookmark()) {
+    throw new Error("DOCK_LIMIT_REACHED");
+  }
   const t = now();
   const url = canonicalBookmarkUrl(input.url);
   const identityUrl = bookmarkIdentityUrl(url);
@@ -558,6 +592,9 @@ export function updateBookmark(bookmarkId: string, input: Partial<{
   const current = getBookmark(bookmarkId);
   if (!current) return null;
   const pinnedBecameTrue = input.pinned === true && !current.pinned;
+  if (pinnedBecameTrue && !canPinBookmark(bookmarkId)) {
+    throw new Error("DOCK_LIMIT_REACHED");
+  }
   const url = input.url ? bookmarkIdentityUrl(input.url) : current.url;
   db.update(bookmarks)
     .set({
@@ -607,6 +644,9 @@ function nextPinnedOrder() {
 
 export function reorderPinnedBookmarks(ids: string[]) {
   ensureDb();
+  if (ids.length > MAX_DOCK_ITEMS) {
+    throw new Error("DOCK_LIMIT_REACHED");
+  }
   const t = now();
   ids.forEach((id, index) => {
     db.update(bookmarks)
