@@ -6,10 +6,11 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json();
-  updateFolder(id, {
+  const result = updateFolder(id, {
     name: body.name,
     parentId: body.parentId === undefined ? undefined : body.parentId
   });
+  if (!result.ok) return NextResponse.json({ message: result.message }, { status: 409 });
   return NextResponse.json({ ok: true });
 }
 

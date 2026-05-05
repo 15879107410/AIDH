@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   if (!body.name?.trim()) {
     return NextResponse.json({ message: "文件夹名称不能为空。" }, { status: 400 });
   }
-  const folder = createFolder({ name: body.name, parentId: body.parentId ?? null });
-  return NextResponse.json({ folder }, { status: 201 });
+  const result = createFolder({ name: body.name, parentId: body.parentId ?? null });
+  if (!result.ok) return NextResponse.json({ message: result.message }, { status: 409 });
+  return NextResponse.json({ folder: result.folder }, { status: 201 });
 }

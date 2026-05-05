@@ -158,14 +158,17 @@ export function AidhApp() {
   }, [bookmarks, query, recentBookmarks, selectedFolderId, selectedFolderIds, sortMode, viewMode]);
 
   const folderFilterLabel = selectedFolder ? selectedFolder.name : "全部文件夹";
+  const selectedFolderPath = selectedFolderId
+    ? folderOptions.find((folder) => folder.id === selectedFolderId)?.path ?? selectedFolder?.name
+    : null;
 
   const toolbarStateText = useMemo(() => {
     const parts = [viewLayout === "grid" ? "网格视图" : "列表视图"];
-    if (selectedFolder) parts.push(`文件夹：${selectedFolder.name}`);
+    if (selectedFolderPath) parts.push(`文件夹：${selectedFolderPath}`);
     if (sortMode === "visits") parts.push("按访问量排序");
     if (viewMode === "pinned") parts.push("只看重点标记");
     return parts.join(" / ");
-  }, [selectedFolder, sortMode, viewLayout, viewMode]);
+  }, [selectedFolderPath, sortMode, viewLayout, viewMode]);
 
   const spotlightResults = query.trim() ? visibleBookmarks : bookmarks.filter((bookmark) => bookmark.tags.includes("生图"));
 
@@ -615,8 +618,13 @@ export function AidhApp() {
             </div>
 
             {workbenchMode === "bookmark" && (
-              <section className="inline-workbench" aria-label={form.id ? "编辑收藏" : "添加网址"}>
-                <form className="workbench-card bookmark-workbench" onSubmit={saveBookmark}>
+              <div className="modal-backdrop" onMouseDown={() => setWorkbenchMode(null)}>
+                <section
+                  className="modal-panel bookmark-modal"
+                  aria-label={form.id ? "编辑收藏" : "添加网址"}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <form className="workbench-card bookmark-workbench modal-workbench" onSubmit={saveBookmark}>
                   <WorkbenchHeader
                     eyebrow="AI Import"
                     title={form.id ? "编辑收藏" : "添加网址"}
@@ -680,8 +688,9 @@ export function AidhApp() {
                       保存收藏
                     </button>
                   </footer>
-                </form>
-              </section>
+                  </form>
+                </section>
+              </div>
             )}
 
             {workbenchMode === "folder" && (
@@ -815,7 +824,7 @@ export function AidhApp() {
                       <strong>{bookmark.title}</strong>
                       <small>{bookmark.tags.join("、") || bookmark.description}</small>
                     </span>
-                    <em>{bookmark.folderName ?? "未分类"}</em>
+                    <em>{bookmark.folderPath ?? bookmark.folderName ?? "未分类"}</em>
                   </a>
                 ))
               ) : (
@@ -1028,7 +1037,7 @@ function BookmarkCard({
         ))}
       </div>
       <footer className="card-footer">
-        <span>{bookmark.folderName ?? "未分类"}</span>
+        <span>{bookmark.folderPath ?? bookmark.folderName ?? "未分类"}</span>
         <small>{bookmark.visitCount} 次访问</small>
         <button onClick={() => onDelete(bookmark)}>删除</button>
       </footer>

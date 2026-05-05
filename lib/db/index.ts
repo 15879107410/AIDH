@@ -32,36 +32,47 @@ function favicon(domain: string) {
 const equivalentHostRoots = ["magicui.design"];
 
 const folderRenames = [
-  ["fld_ai_coding", "编程"],
-  ["fld_model_api", "模型 API"],
-  ["fld_model_eval", "评测榜单"],
-  ["fld_data_cloud", "数据云"],
-  ["fld_ui_design", "UI 组件"],
-  ["fld_deploy_growth", "部署增长"],
-  ["fld_domain", "域名出海"],
-  ["fld_analytics", "反馈分析"],
-  ["fld_open_source", "开源源码"],
-  ["fld_product_cases", "产品案例"],
-  ["fld_learning", "课程阅读"],
-  ["fld_agent", "编程"],
-  ["fld_gen", "生图视频"],
-  ["fld_write", "写作"],
-  ["fld_design", "设计"],
-  ["fld_docs", "文档"]
+  ["fld_open_source", "AI编程"],
+  ["fld_ai_coding", "后端"],
+  ["fld_09c8e6d3188e4280b4", "代码管理"],
+  ["fld_ui_design", "前端"],
+  ["fld_ui_proto", "UI原型库"],
+  ["fld_ui_component", "UI组件库"],
+  ["fld_data_cloud", "数据存储"],
+  ["fld_database", "数据库"],
+  ["fld_cloud_storage", "云存储"],
+  ["fld_deploy_growth", "部署上线"],
+  ["fld_domain", "域名服务器"],
+  ["fld_model_api", "API"],
+  ["fld_model_eval", "榜单"],
+  ["fld_open_source_skill", "skill库"],
+  ["fld_open_source_mcp", "mcp库"],
+  ["fld_product_cases", "AIGC"],
+  ["fld_gen", "图像生成"],
+  ["fld_learning", "课程学习"],
+  ["fld_analytics", "数据分析"]
 ] as const;
 
 const folderHierarchy = [
   ["fld_open_source", null, 1],
   ["fld_ai_coding", "fld_open_source", 1],
+  ["fld_09c8e6d3188e4280b4", "fld_ai_coding", 1],
   ["fld_ui_design", "fld_open_source", 2],
-  ["fld_model_api", null, 2],
-  ["fld_model_eval", "fld_model_api", 1],
-  ["fld_product_cases", "fld_model_api", 2],
-  ["fld_data_cloud", null, 3],
-  ["fld_deploy_growth", "fld_data_cloud", 1],
+  ["fld_ui_proto", "fld_ui_design", 1],
+  ["fld_ui_component", "fld_ui_design", 2],
+  ["fld_data_cloud", "fld_open_source", 3],
+  ["fld_database", "fld_data_cloud", 1],
+  ["fld_cloud_storage", "fld_data_cloud", 2],
+  ["fld_deploy_growth", "fld_open_source", 4],
   ["fld_domain", "fld_deploy_growth", 1],
-  ["fld_analytics", null, 4],
-  ["fld_learning", "fld_analytics", 1]
+  ["fld_model_api", "fld_open_source", 5],
+  ["fld_model_eval", "fld_model_api", 1],
+  ["fld_open_source_skill", "fld_open_source", 6],
+  ["fld_open_source_mcp", "fld_open_source", 7],
+  ["fld_analytics", "fld_open_source", 8],
+  ["fld_product_cases", null, 2],
+  ["fld_gen", "fld_product_cases", 1],
+  ["fld_learning", null, 3]
 ] as const;
 
 export function canonicalBookmarkUrl(value: string) {
@@ -121,6 +132,7 @@ export function ensureDb() {
   migrateFolderNames();
   migrateFolderHierarchy();
   mergeEquivalentBookmarks();
+  migrateBookmarkFolders();
   initialized = true;
 }
 
@@ -136,6 +148,24 @@ function migrateFolderHierarchy() {
   folderHierarchy.forEach(([folderId, parentId, sortOrder]) => stmt.run(parentId, sortOrder, t, folderId));
 }
 
+function migrateBookmarkFolders() {
+  const t = now();
+  db.update(bookmarks).set({ folderId: "fld_ai_coding", updatedAt: t }).where(eq(bookmarks.folderId, "fld_ai_coding")).run();
+  db.update(bookmarks).set({ folderId: "fld_09c8e6d3188e4280b4", updatedAt: t }).where(eq(bookmarks.folderId, "fld_09c8e6d3188e4280b4")).run();
+  db.update(bookmarks).set({ folderId: "fld_09c8e6d3188e4280b4", updatedAt: t }).where(sql`lower(title) like '%github%' or lower(url) like '%github%'`).run();
+  db.update(bookmarks).set({ folderId: "fld_ui_proto", updatedAt: t }).where(sql`title in ('21st.dev')`).run();
+  db.update(bookmarks).set({ folderId: "fld_ui_component", updatedAt: t }).where(sql`title in ('Magic UI', 'Animate UI', 'Aceternity UI', 'Supahero', 'Google Stitch')`).run();
+  db.update(bookmarks).set({ folderId: "fld_database", updatedAt: t }).where(sql`title in ('Neon Console', 'Supabase Docs', 'TablePlus')`).run();
+  db.update(bookmarks).set({ folderId: "fld_cloud_storage", updatedAt: t }).where(sql`title in ('腾讯云')`).run();
+  db.update(bookmarks).set({ folderId: "fld_deploy_growth", updatedAt: t }).where(sql`title in ('Vercel', 'Next.js Showcase')`).run();
+  db.update(bookmarks).set({ folderId: "fld_domain", updatedAt: t }).where(sql`title in ('Instant Domain Search', 'Namecheap')`).run();
+  db.update(bookmarks).set({ folderId: "fld_model_eval", updatedAt: t }).where(sql`title in ('Arena Leaderboard', 'Artificial Analysis')`).run();
+  db.update(bookmarks).set({ folderId: "fld_open_source_skill", updatedAt: t }).where(sql`title in ('skills.sh', 'TRAE 推荐 Skills')`).run();
+  db.update(bookmarks).set({ folderId: "fld_open_source_mcp", updatedAt: t }).where(sql`title in ('OpenRouter', 'Postman')`).run();
+  db.update(bookmarks).set({ folderId: "fld_gen", updatedAt: t }).where(sql`title in ('即梦 AI', 'Midjourney', 'Krea', 'Runway', 'DALL·E')`).run();
+  db.update(bookmarks).set({ folderId: "fld_learning", updatedAt: t }).where(sql`title in ('X 设计彩蛋案例', 'evolink.ai', '生财有术深海圈课程')`).run();
+}
+
 function mergeEquivalentBookmarks() {
   const rows = db.select().from(bookmarks).orderBy(desc(bookmarks.pinned), asc(bookmarks.createdAt)).all();
   const seen = new Map<string, string>();
@@ -149,6 +179,35 @@ function mergeEquivalentBookmarks() {
     db.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmark.id)).run();
     db.delete(bookmarks).where(eq(bookmarks.id, bookmark.id)).run();
   });
+}
+
+function folderPathMap() {
+  const rows = db.select().from(folders).all();
+  const byId = new Map(rows.map((folder) => [folder.id, folder]));
+  const cache = new Map<string, string>();
+  const pathFor = (folderId: string): string => {
+    const cached = cache.get(folderId);
+    if (cached) return cached;
+    const folder = byId.get(folderId);
+    if (!folder) return "";
+    const parentPath = folder.parentId ? pathFor(folder.parentId) : "";
+    const path = parentPath ? `${parentPath} / ${folder.name}` : folder.name;
+    cache.set(folderId, path);
+    return path;
+  };
+  rows.forEach((folder) => pathFor(folder.id));
+  return cache;
+}
+
+function folderHasDescendant(folderId: string, targetId: string): boolean {
+  const children = db.select().from(folders).where(eq(folders.parentId, folderId)).all();
+  return children.some((child) => child.id === targetId || folderHasDescendant(child.id, targetId));
+}
+
+function siblingFolderExists(name: string, parentId: string | null, exceptId?: string) {
+  const trimmed = name.trim();
+  const rows = db.select().from(folders).where(parentId ? eq(folders.parentId, parentId) : sql`${folders.parentId} is null`).all();
+  return rows.some((folder) => folder.id !== exceptId && folder.name.trim().toLowerCase() === trimmed.toLowerCase());
 }
 
 function seed() {
@@ -290,29 +349,46 @@ export function listFolders(): FolderNode[] {
 export function createFolder(input: { name: string; parentId?: string | null }) {
   ensureDb();
   const t = now();
+  const name = input.name.trim();
+  const parentId = input.parentId ?? null;
+  if (!name) return { ok: false as const, message: "文件夹名称不能为空。" };
+  if (siblingFolderExists(name, parentId)) {
+    return { ok: false as const, message: "同级文件夹已存在同名项。" };
+  }
   const max = db
     .select({ value: sql<number>`coalesce(max(${folders.sortOrder}), 0)` })
     .from(folders)
-    .where(input.parentId ? eq(folders.parentId, input.parentId) : sql`${folders.parentId} is null`)
+    .where(parentId ? eq(folders.parentId, parentId) : sql`${folders.parentId} is null`)
     .get();
   const row = {
     id: id("fld"),
-    name: input.name.trim(),
-    parentId: input.parentId ?? null,
+    name,
+    parentId,
     sortOrder: Number(max?.value ?? 0) + 1,
     createdAt: t,
     updatedAt: t
   };
   db.insert(folders).values(row).run();
-  return row;
+  return { ok: true as const, folder: row };
 }
 
 export function updateFolder(folderId: string, input: { name?: string; parentId?: string | null }) {
   ensureDb();
+  const current = db.select().from(folders).where(eq(folders.id, folderId)).get();
+  if (!current) return { ok: false as const, message: "文件夹不存在。" };
+  const name = input.name?.trim() || current.name;
+  const parentId = input.parentId === undefined ? current.parentId : input.parentId;
+  if (parentId === folderId || (parentId && folderHasDescendant(folderId, parentId))) {
+    return { ok: false as const, message: "不能把文件夹移动到自己的下级。" };
+  }
+  if (siblingFolderExists(name, parentId ?? null, folderId)) {
+    return { ok: false as const, message: "同级文件夹已存在同名项。" };
+  }
   db.update(folders)
-    .set({ ...input, updatedAt: now() })
+    .set({ name, parentId: parentId ?? null, updatedAt: now() })
     .where(eq(folders.id, folderId))
     .run();
+  return { ok: true as const };
 }
 
 export function deleteFolder(folderId: string) {
@@ -387,6 +463,7 @@ export function listBookmarks(filter: { folderId?: string | null; q?: string; ta
 }
 
 function withTags(row: Omit<Bookmark, "tags">): Bookmark {
+  const paths = folderPathMap();
   const tagRows = db
     .select({ name: tags.name })
     .from(bookmarkTags)
@@ -394,7 +471,7 @@ function withTags(row: Omit<Bookmark, "tags">): Bookmark {
     .where(eq(bookmarkTags.bookmarkId, row.id))
     .orderBy(asc(tags.name))
     .all();
-  return { ...row, tags: tagRows.map((tag) => tag.name) };
+  return { ...row, folderPath: row.folderId ? paths.get(row.folderId) ?? row.folderName ?? null : null, tags: tagRows.map((tag) => tag.name) };
 }
 
 export function getBookmark(bookmarkId: string) {

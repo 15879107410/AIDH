@@ -15,6 +15,7 @@ export type Bookmark = {
   description: string;
   folderId: string | null;
   folderName?: string | null;
+  folderPath?: string | null;
   pinned: boolean;
   pinnedOrder: number | null;
   visitCount: number;
