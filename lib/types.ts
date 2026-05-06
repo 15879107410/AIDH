@@ -37,6 +37,9 @@ export type AiPreview = {
   tags: string[];
   suggestedFolderId: string | null;
   suggestedFolderName: string | null;
+  suggestedFolderPath?: string | null;
   confidence: number;
   source: "mock" | "deepseek";
+  model?: string | null;
+  correctedByRule?: boolean;
 };

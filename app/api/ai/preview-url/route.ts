@@ -43,8 +43,29 @@ const known = [
   }
 ];
 
-function flattenFolders(nodes: ReturnType<typeof listFolders>): { id: string; name: string }[] {
-  return nodes.flatMap((node) => [{ id: node.id, name: node.name }, ...flattenFolders(node.children)]);
+function flattenFolders(nodes: ReturnType<typeof listFolders>, parentPath = ""): { id: string; name: string; path: string }[] {
+  return nodes.flatMap((node) => {
+    const path = parentPath ? `${parentPath} / ${node.name}` : node.name;
+    return [{ id: node.id, name: node.name, path }, ...flattenFolders(node.children, path)];
+  });
+}
+
+function scoreFolder(folder: { name: string; path: string }, text: string) {
+  const haystack = text.toLowerCase();
+  let score = 0;
+  if (haystack.includes(folder.name.toLowerCase())) score += 6;
+  folder.path.toLowerCase().split(/\s*\/\s*/).forEach((part) => {
+    if (part && haystack.includes(part)) score += 4;
+  });
+  return score;
+}
+
+function pickBestFolder(folderOptions: { id: string; name: string; path: string }[], text: string) {
+  if (!folderOptions.length) return null;
+  const ranked = [...folderOptions]
+    .map((folder) => ({ folder, score: scoreFolder(folder, text) }))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.score > 0 ? ranked[0].folder : null;
 }
 
 function fallbackPreview(url: string): AiPreview {
@@ -52,8 +73,8 @@ function fallbackPreview(url: string): AiPreview {
   const domain = parsed.hostname.replace(/^www\./, "");
   const match = known.find((item) => domain.includes(item.match));
   const folderOptions = flattenFolders(listFolders());
-  const suggestedFolder = folderOptions.find((folder) => folder.name === match?.folder) ?? null;
   const title = match?.title ?? domain.split(".")[0].replace(/^\w/, (char) => char.toUpperCase());
+  const suggestedFolder = pickBestFolder(folderOptions, `${domain} ${title} ${match?.description ?? ""} ${match?.tags?.join(" ") ?? ""}`);
   return {
     title,
     url: parsed.origin,
@@ -62,8 +83,11 @@ function fallbackPreview(url: string): AiPreview {
     tags: match?.tags ?? ["待整理", "网页", "收藏"],
     suggestedFolderId: suggestedFolder?.id ?? null,
     suggestedFolderName: suggestedFolder?.name ?? null,
+    suggestedFolderPath: suggestedFolder?.path ?? null,
     confidence: match?.confidence ?? 0.56,
-    source: "mock"
+    source: "mock",
+    model: null,
+    correctedByRule: false
   };
 }
 
@@ -75,16 +99,21 @@ async function deepseekPreview(url: string): Promise<AiPreview> {
     title: "string",
     description: "string",
     tags: ["string"],
-    suggestedFolderName: "string | null",
+    suggestedFolderId: "string",
+    suggestedFolderPath: "string",
     confidence: 0.0
   };
+  const folderPayload = folderOptions.map((folder) => ({ id: folder.id, path: folder.path }));
   const systemPrompt = [
     "You are a bookmark classification assistant.",
     "Return ONLY valid JSON.",
     "Normalize all URLs to the site homepage origin.",
-    "Suggest a folder name only from the provided folder list, or null if none fits.",
+    "You MUST choose exactly one suggestedFolderId from the provided folder list.",
+    "The chosen suggestedFolderId must be one of the provided ids.",
+    "Also return the matching suggestedFolderPath for readability.",
+    "Never invent folder ids or folder paths.",
     "Keep descriptions short and practical.",
-    `Available folders: ${folderOptions.map((folder) => folder.name).join(", ")}`,
+    `Available folders: ${JSON.stringify(folderPayload)}`,
     `Output schema example: ${JSON.stringify(schemaHint)}`
   ].join(" ");
   const userPrompt = [
@@ -92,7 +121,7 @@ async function deepseekPreview(url: string): Promise<AiPreview> {
     `Domain: ${domain}`,
     "Classify this website for a bookmark manager.",
     "Prefer concise Chinese output.",
-    "Return JSON with keys: title, description, tags, suggestedFolderName, confidence."
+    "Return JSON with keys: title, description, tags, suggestedFolderId, suggestedFolderPath, confidence."
   ].join("\n");
 
   const response = await fetch(`${DEEPSEEK_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
@@ -127,23 +156,36 @@ async function deepseekPreview(url: string): Promise<AiPreview> {
     title?: string;
     description?: string;
     tags?: string[];
+    suggestedFolderId?: string | null;
+    suggestedFolderPath?: string | null;
     suggestedFolderName?: string | null;
     confidence?: number;
   };
-  const suggestedFolder = payload.suggestedFolderName
-    ? folderOptions.find((folder) => folder.name === payload.suggestedFolderName) ?? null
-    : null;
+  const suggestedFolderValue = payload.suggestedFolderPath ?? payload.suggestedFolderName ?? null;
+  const aiFolder =
+    (payload.suggestedFolderId ? folderOptions.find((folder) => folder.id === payload.suggestedFolderId) : null) ??
+    (suggestedFolderValue ? folderOptions.find((folder) => folder.path === suggestedFolderValue || folder.name === suggestedFolderValue) ?? null : null);
+  const title = payload.title?.trim() || domain;
+  const description = payload.description?.trim() || `${domain} 的网页收藏。`;
+  const tags = Array.isArray(payload.tags) && payload.tags.length ? payload.tags.slice(0, 8) : ["待整理", "网页", "收藏"];
+  const confidence = typeof payload.confidence === "number" ? payload.confidence : 0.7;
+  const ruleFolder = pickBestFolder(folderOptions, `${domain} ${title} ${description} ${tags.join(" ")}`);
+  const suggestedFolder = aiFolder ?? ruleFolder;
+  const correctedByRule = Boolean(!aiFolder && ruleFolder);
 
   return {
-    title: payload.title?.trim() || domain,
+    title,
     url: parsed.origin,
     logoUrl: `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
-    description: payload.description?.trim() || `${domain} 的网页收藏。`,
-    tags: Array.isArray(payload.tags) && payload.tags.length ? payload.tags.slice(0, 8) : ["待整理", "网页", "收藏"],
+    description,
+    tags,
     suggestedFolderId: suggestedFolder?.id ?? null,
     suggestedFolderName: suggestedFolder?.name ?? null,
-    confidence: typeof payload.confidence === "number" ? payload.confidence : 0.7,
-    source: "deepseek"
+    suggestedFolderPath: suggestedFolder?.path ?? null,
+    confidence,
+    source: "deepseek",
+    model: DEEPSEEK_MODEL,
+    correctedByRule
   };
 }
 

@@ -58,6 +58,8 @@ type BookmarkForm = {
   pinned: boolean;
 };
 
+type AiInspectMeta = Pick<AiPreview, "source" | "confidence" | "model" | "suggestedFolderPath" | "suggestedFolderName" | "correctedByRule">;
+
 const emptyForm: BookmarkForm = {
   url: "",
   title: "",
@@ -122,9 +124,11 @@ export function AidhApp() {
   const [importText, setImportText] = useState("");
   const [pendingBookmarkDelete, setPendingBookmarkDelete] = useState<Bookmark | null>(null);
   const [pendingFolderDelete, setPendingFolderDelete] = useState<FolderNode | null>(null);
+  const [movingBookmark, setMovingBookmark] = useState<Bookmark | null>(null);
   const [dockManagerOpen, setDockManagerOpen] = useState(false);
   const [aiState, setAiState] = useState<AiState>("idle");
   const [aiMessage, setAiMessage] = useState("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
+  const [aiInspectMeta, setAiInspectMeta] = useState<AiInspectMeta | null>(null);
   const [toast, setToast] = useState("");
   const [folderMenu, setFolderMenu] = useState<{ folder: FolderNode; x: number; y: number } | null>(null);
   const [dockMenu, setDockMenu] = useState<{ bookmark: Bookmark; x: number; y: number } | null>(null);
@@ -392,6 +396,11 @@ export function AidhApp() {
     await moveBookmark(bookmark.id, { folderId: bookmark.folderId ?? null, pinned: false });
   }
 
+  async function moveBookmarkToFolder(bookmark: Bookmark, folderId: string | null) {
+    const moved = await moveBookmark(bookmark.id, { folderId, pinned: bookmark.pinned });
+    if (moved) setMovingBookmark(null);
+  }
+
   function exportBookmarks() {
     const payload: ExportPayload = {
       version: 1,
@@ -446,6 +455,7 @@ export function AidhApp() {
     setForm({ ...emptyForm, folderId: selectedFolderId });
     setAiState("idle");
     setAiMessage("输入网址后，AI 会先模拟识别标题、Logo、简介和标签。");
+    setAiInspectMeta(null);
     setWorkbenchMode("bookmark");
   }
 
@@ -462,6 +472,7 @@ export function AidhApp() {
     });
     setAiState("success");
     setAiMessage("正在编辑已保存收藏。");
+    setAiInspectMeta(null);
     setWorkbenchMode("bookmark");
   }
 
@@ -470,10 +481,12 @@ export function AidhApp() {
     if (!url) {
       setAiState("error");
       setAiMessage("先输入一个网址，AI 才能开始识别。");
+      setAiInspectMeta(null);
       return;
     }
     setAiState("loading");
     setAiMessage("AI 正在读取网页线索并生成标签建议...");
+    setAiInspectMeta(null);
     const response = await fetch("/api/ai/preview-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -482,6 +495,7 @@ export function AidhApp() {
     if (!response.ok) {
       setAiState("error");
       setAiMessage("这个网址暂时无法识别，你仍然可以手动填写后保存。");
+      setAiInspectMeta(null);
       return;
     }
     const json = (await response.json()) as { preview: AiPreview };
@@ -495,10 +509,18 @@ export function AidhApp() {
       tags: json.preview.tags.join(", ")
     }));
     setAiState("success");
+    setAiInspectMeta({
+      source: json.preview.source,
+      confidence: json.preview.confidence,
+      model: json.preview.model,
+      suggestedFolderPath: json.preview.suggestedFolderPath,
+      suggestedFolderName: json.preview.suggestedFolderName,
+      correctedByRule: json.preview.correctedByRule
+    });
     setAiMessage(
-      json.preview.suggestedFolderName
-        ? `建议放入「${json.preview.suggestedFolderName}」，置信度 ${Math.round(json.preview.confidence * 100)}%。`
-        : "已生成基础信息，建议手动选择文件夹。"
+      json.preview.suggestedFolderPath ?? json.preview.suggestedFolderName
+        ? `已自动选择「${json.preview.suggestedFolderPath ?? json.preview.suggestedFolderName}」。`
+        : "已生成基础信息，暂时没有可用文件夹。"
     );
   }
 
@@ -731,7 +753,7 @@ export function AidhApp() {
     showToast("已从 Dock 移出");
   }
 
-  async function handleBookmarkContextAction(action: "open" | "edit" | "toggle-dock" | "delete") {
+  async function handleBookmarkContextAction(action: "open" | "edit" | "toggle-dock" | "move" | "delete") {
     if (!bookmarkMenu) return;
     const bookmark = bookmarkMenu.bookmark;
     setBookmarkMenu(null);
@@ -746,6 +768,10 @@ export function AidhApp() {
     }
     if (action === "toggle-dock") {
       await togglePinned(bookmark);
+      return;
+    }
+    if (action === "move") {
+      setMovingBookmark(bookmark);
       return;
     }
     setPendingBookmarkDelete(bookmark);
@@ -941,6 +967,19 @@ export function AidhApp() {
                       </button>
                     )}
                   </div>
+                  {aiInspectMeta && (
+                    <div className="ai-result-strip">
+                      <span className={aiInspectMeta.source === "deepseek" ? "source-deepseek" : "source-mock"}>
+                        {aiInspectMeta.source === "deepseek" ? "DeepSeek AI" : "本地规则"}
+                      </span>
+                      <strong>AI 把握 {Math.round(aiInspectMeta.confidence * 100)}%</strong>
+                      {aiInspectMeta.model && <small>{aiInspectMeta.model}</small>}
+                      {aiInspectMeta.correctedByRule && <small>规则校正</small>}
+                      {(aiInspectMeta.suggestedFolderPath ?? aiInspectMeta.suggestedFolderName) && (
+                        <em>{aiInspectMeta.suggestedFolderPath ?? aiInspectMeta.suggestedFolderName}</em>
+                      )}
+                    </div>
+                  )}
                   <label className="field wide">
                     <span>网址</span>
                     <input
@@ -1064,6 +1103,10 @@ export function AidhApp() {
                 <button type="button" onClick={() => void handleBookmarkContextAction("edit")}>
                   <Pencil size={14} />
                   编辑收藏
+                </button>
+                <button type="button" onClick={() => void handleBookmarkContextAction("move")}>
+                  <FolderClosed size={14} />
+                  移动到...
                 </button>
                 <button type="button" onClick={() => void handleBookmarkContextAction("toggle-dock")}>
                   <Star size={14} fill={bookmarkMenu.bookmark.pinned ? "currentColor" : "none"} />
@@ -1314,6 +1357,43 @@ export function AidhApp() {
                 </div>
               ))}
               {!pinnedBookmarks.length && <div className="dock-manager-empty">还没有加入 Dock 的常用网址。</div>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {movingBookmark && (
+        <div className="modal-backdrop" onMouseDown={() => setMovingBookmark(null)}>
+          <section className="modal-panel move-folder-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="移动到文件夹">
+            <WorkbenchHeader eyebrow="Move Bookmark" title="移动到文件夹" onClose={() => setMovingBookmark(null)} />
+            <div className="move-bookmark-target">
+              <img src={movingBookmark.logoUrl} alt="" />
+              <span>
+                <strong>{movingBookmark.title}</strong>
+                <small>{movingBookmark.folderPath ?? movingBookmark.folderName ?? "未分类"}</small>
+              </span>
+            </div>
+            <div className="folder-picker-list">
+              <button
+                type="button"
+                className={!movingBookmark.folderId ? "active" : ""}
+                onClick={() => void moveBookmarkToFolder(movingBookmark, null)}
+              >
+                <span>未分类</span>
+              </button>
+              {folderOptions.map((folder) => (
+                <button
+                  type="button"
+                  key={folder.id}
+                  className={movingBookmark.folderId === folder.id ? "active" : ""}
+                  style={{ paddingLeft: 14 + folder.depth * 18 }}
+                  onClick={() => void moveBookmarkToFolder(movingBookmark, folder.id)}
+                >
+                  <FolderClosed size={15} />
+                  <span>{folder.path}</span>
+                  <strong>{folder.count}</strong>
+                </button>
+              ))}
             </div>
           </section>
         </div>
