@@ -588,6 +588,21 @@ kbd {
   color: #394758;
 }
 
+.ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 14px;
+  padding: 0 18px;
+  background: rgba(255, 255, 255, 0.48);
+  color: #435267;
+  font-size: 15px;
+  font-weight: 800;
+  transition: all 180ms var(--ease-mac);
+}
+
 .danger-button {
   border-color: rgba(255, 95, 87, 0.28);
   background: linear-gradient(180deg, #ff6b62, #e3473f);
@@ -607,6 +622,7 @@ kbd {
 .primary-button:hover,
 .secondary-button:hover,
 .danger-button:hover,
+.ghost-button:hover,
 .mini-button:hover {
   transform: translateY(-1px);
 }
@@ -1917,6 +1933,18 @@ kbd {
   max-width: 920px;
 }
 
+.folder-modal {
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - var(--dock-safe-area) - 28px);
+  overflow: auto;
+  margin-bottom: calc(var(--dock-safe-area) - 118px);
+}
+
+.folder-modal-form {
+  display: grid;
+  gap: 18px;
+}
+
 .bookmark-modal {
   width: min(1040px, calc(100vw - 48px));
   max-height: calc(100vh - var(--dock-safe-area) - 28px);
@@ -1985,9 +2013,17 @@ kbd {
 
 .folder-form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr;
   align-items: end;
   gap: 14px;
+}
+
+.folder-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.52);
+  padding-top: 16px;
 }
 
 .field {

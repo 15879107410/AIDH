@@ -1035,38 +1035,49 @@ export function AidhApp() {
             )}
 
             {workbenchMode === "folder" && (
-              <section className="inline-workbench" aria-label={folderForm.id ? "编辑文件夹" : "新建文件夹"}>
-                <form className="workbench-card folder-workbench" onSubmit={saveFolder}>
-                  <WorkbenchHeader
-                    eyebrow="Finder Folder"
-                    title={folderForm.id ? "编辑文件夹" : "新建文件夹"}
-                    onClose={() => setWorkbenchMode(null)}
-                  />
-                  <div className="folder-form-row">
-                    <label className="field">
-                      <span>名称</span>
-                      <input value={folderForm.name} onChange={(event) => setFolderForm({ ...folderForm, name: event.target.value })} required autoFocus />
-                    </label>
-                    <label className="field">
-                      <span>父级文件夹</span>
-                      <select value={folderForm.parentId} onChange={(event) => setFolderForm({ ...folderForm, parentId: event.target.value })}>
-                        <option value="">顶层</option>
-                        {folderOptions
-                          .filter((folder) => !blockedParentIds.has(folder.id))
-                          .map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                              {"-- ".repeat(folder.depth)}
-                              {folder.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <button className="primary-button" type="submit">
-                      保存文件夹
-                    </button>
-                  </div>
-                </form>
-              </section>
+              <div className="modal-backdrop" onMouseDown={() => setWorkbenchMode(null)}>
+                <section
+                  className="modal-panel folder-modal"
+                  aria-label={folderForm.id ? "编辑文件夹" : "新建文件夹"}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <form className="folder-modal-form" onSubmit={saveFolder}>
+                    <WorkbenchHeader
+                      eyebrow="Finder Folder"
+                      title={folderForm.id ? "编辑文件夹" : "新建文件夹"}
+                      onClose={() => setWorkbenchMode(null)}
+                    />
+                    <div className="folder-form-row">
+                      <label className="field">
+                        <span>名称</span>
+                        <input value={folderForm.name} onChange={(event) => setFolderForm({ ...folderForm, name: event.target.value })} required autoFocus />
+                      </label>
+                      <label className="field">
+                        <span>父级文件夹</span>
+                        <select value={folderForm.parentId} onChange={(event) => setFolderForm({ ...folderForm, parentId: event.target.value })}>
+                          <option value="">顶层</option>
+                          {folderOptions
+                            .filter((folder) => !blockedParentIds.has(folder.id))
+                            .map((folder) => (
+                              <option key={folder.id} value={folder.id}>
+                                {"-- ".repeat(folder.depth)}
+                                {folder.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
+                    <footer className="folder-modal-footer">
+                      <button className="ghost-button" type="button" onClick={() => setWorkbenchMode(null)}>
+                        取消
+                      </button>
+                      <button className="primary-button" type="submit">
+                        保存文件夹
+                      </button>
+                    </footer>
+                  </form>
+                </section>
+              </div>
             )}
 
             {folderMenu && (
